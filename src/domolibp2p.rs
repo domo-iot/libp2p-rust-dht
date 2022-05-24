@@ -22,91 +22,85 @@ use std::error::Error;
 use std::time::Duration;
 
 
-struct DomoLibp2p {
-    pub behaviour: MyBehaviour,
-    pub swarm: Swarm
-}
+pub fn publish(swarm: &mut Swarm<DomoBehaviour>){
 
-impl DomoLibp2p{
+    let topic = Topic::new("domo-data");
 
-    pub fn publish(){
+    for i in 0..1000 {
 
-        let topic = Topic::new("domo-data");
+        let message = i.to_string();
 
-        for i in 0..1000 {
-
-            let message = i.to_string();
-
-            if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), message.as_bytes()){
-                println!("Publish error: {:?}", e);
-            }
-            else{
-                println!("Publishing message {}", i);
-            }
+        if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), message.as_bytes()){
+            println!("Publish error: {:?}", e);
+        }
+        else{
+            println!("Publishing message {}", i);
         }
     }
+}
 
-    pub fn start(&mut self){
-        // Create a random key for ourselves.
-        let local_key = identity::Keypair::generate_ed25519();
-        let local_peer_id = PeerId::from(local_key.public());
-
-
-        // Create a Gossipsub topic
-        let topic = Topic::new("domo-data");
-
-        // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
-        let transport = development_transport(local_key.clone()).await?;
-
-        // Create a swarm to manage peers and events.
-        self.swarm = {
-
-            let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
-
-            // To content-address message, we can take the hash of message and use it as an ID.
-            let message_id_fn = |message: &GossipsubMessage| {
-                let mut s = DefaultHasher::new();
-                message.data.hash(&mut s);
-                MessageId::from(s.finish().to_string())
-            };
-
-            // Set a custom gossipsub
-            let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
-                .heartbeat_interval(Duration::from_secs(10)) // This is set to aid debugging by not cluttering the log space
-                .validation_mode(ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
-                .message_id_fn(message_id_fn) // content-address messages. No two messages of the
-                // same content will be propagated.
-                .build()
-                .expect("Valid config");
-
-            // build a gossipsub network behaviour
-            let mut gossipsub: gossipsub::Gossipsub =
-                gossipsub::Gossipsub::new(MessageAuthenticity::Signed(local_key), gossipsub_config)
-                    .expect("Correct configuration");
-
-            // subscribes to our topic
-            gossipsub.subscribe(&topic).unwrap();
+pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>>{
+    // Create a random key for ourselves.
+    let local_key = identity::Keypair::generate_ed25519();
+    let local_peer_id = PeerId::from(local_key.public());
 
 
-            self.behaviour = MyBehaviour { mdns, gossipsub};
-            Swarm::new(transport, behaviour, local_peer_id)
+    // Create a Gossipsub topic
+    let topic = Topic::new("domo-data");
+
+    // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
+    let transport = development_transport(local_key.clone()).await?;
+
+    // Create a swarm to manage peers and events.
+    let mut swarm = {
+
+        let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
+
+        // To content-address message, we can take the hash of message and use it as an ID.
+        let message_id_fn = |message: &GossipsubMessage| {
+            let mut s = DefaultHasher::new();
+            message.data.hash(&mut s);
+            MessageId::from(s.finish().to_string())
         };
 
-        // Listen on all interfaces and whatever port the OS assigns.
-        self.swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
-    }
+        // Set a custom gossipsub
+        let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
+            .heartbeat_interval(Duration::from_secs(10)) // This is set to aid debugging by not cluttering the log space
+            .validation_mode(ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
+            .message_id_fn(message_id_fn) // content-address messages. No two messages of the
+            // same content will be propagated.
+            .build()
+            .expect("Valid config");
+
+        // build a gossipsub network behaviour
+        let mut gossipsub: gossipsub::Gossipsub =
+            gossipsub::Gossipsub::new(MessageAuthenticity::Signed(local_key), gossipsub_config)
+                .expect("Correct configuration");
+
+        // subscribes to our topic
+        gossipsub.subscribe(&topic).unwrap();
+
+        let behaviour = DomoBehaviour { mdns, gossipsub};
+        Swarm::new(transport, behaviour, local_peer_id)
+    };
+
+    // Listen on all interfaces and whatever port the OS assigns.
+    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+
+    Ok(swarm)
 }
+
 
 
 // We create a custom network behaviour that combines Kademlia and mDNS.
 #[derive(NetworkBehaviour)]
 #[behaviour(event_process = true)]
-struct MyBehaviour {
+pub struct DomoBehaviour {
     mdns: Mdns,
     gossipsub: gossipsub::Gossipsub
 }
 
-impl NetworkBehaviourEventProcess<GossipsubEvent> for MyBehaviour {
+impl NetworkBehaviourEventProcess<GossipsubEvent> for DomoBehaviour {
     // Called when `gossip_pub_sub` produces an event.
     fn inject_event(&mut self, event: GossipsubEvent) {
         if let GossipsubEvent::Message {
@@ -126,7 +120,7 @@ impl NetworkBehaviourEventProcess<GossipsubEvent> for MyBehaviour {
 
 }
 
-impl NetworkBehaviourEventProcess<MdnsEvent> for MyBehaviour {
+impl NetworkBehaviourEventProcess<MdnsEvent> for DomoBehaviour {
     // Called when `mdns` produces an event.
     fn inject_event(&mut self, event: MdnsEvent) {
         if let MdnsEvent::Discovered(list) = event {
