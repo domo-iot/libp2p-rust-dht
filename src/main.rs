@@ -45,6 +45,31 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!("Listening in {:?}", address);
                 },
+                SwarmEvent::Behaviour(
+                    domolibp2p::OutEvent::Gossipsub(
+                    GossipsubEvent::Message{
+                    propagation_source: peer_id,
+                    message_id: id,
+                    message
+                        })) => {
+                    println!(
+                        "Got message: {} with id: {} from peer: {:?}, topic {}",
+                        String::from_utf8_lossy(&message.data),
+                        id,
+                        peer_id,
+                        &message.topic);
+                },
+                SwarmEvent::Behaviour(domolibp2p::OutEvent::Mdns(
+                    MdnsEvent::Discovered(list)
+                )) => {
+                    for (peer, _) in list {
+                        swarm
+                            .behaviour_mut()
+                            .gossipsub
+                            .add_explicit_peer(&peer);
+                        println!("Discovered peer {}", peer);
+                    }
+                }
                 _ => {}
             }
         //async_std::task::sleep(Duration::from_secs(10)).await;
