@@ -20,6 +20,26 @@ use libp2p::{
 };
 use std::error::Error;
 use std::time::Duration;
+use serde_json::{Value, json};
+
+pub fn pub_element(swarm: &mut Swarm<DomoBehaviour>, topic_name: &str, topic_uuid: &str, value: Value){
+
+    let topic = Topic::new("domo-data");
+
+    let m = json!( { "topic_name": topic_name, "topic_uuid": topic_uuid, "payload": value});
+
+    let m = m.to_string();
+    //println!("{}", message);
+
+    if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), m.as_bytes()){
+            println!("Publish error: {:?}", e);
+    }
+    else{
+            println!("Publishing message");
+    }
+
+}
+
 
 
 pub fn publish(swarm: &mut Swarm<DomoBehaviour>){
