@@ -1,6 +1,7 @@
 mod domolibp2p;
 mod domocache;
 
+use std::collections::HashMap;
 use async_std::{io, task};
 use futures::{prelude::*, select};
 
@@ -13,6 +14,7 @@ use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+
 //
 
 use libp2p::{
@@ -23,6 +25,8 @@ use libp2p::{
 };
 use std::error::Error;
 use std::time::Duration;
+use serde_json::{Value, json};
+use crate::domocache::DomoCacheOperations;
 
 
 #[async_std::main]
@@ -33,13 +37,72 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut swarm = domolibp2p::start().await.unwrap();
 
+    let house_uuid = String::from("CasaProva");
+    let mut domo_cache = domocache::DomoCache{
+        house_uuid: house_uuid.clone(),
+        is_persistent_cache: true,
+        storage: Box::new(
+            domocache::SqliteStorage {
+                house_uuid: house_uuid.clone(),
+                sqlite_file: String::from("./prova.sqlite"),
+                sqlite_connection: None
+            }),
+        cache: HashMap::new()
+    };
+
+    domo_cache.init();
+
+    domo_cache.write_value(&String::from("ciao"), &String::from("ciao"),
+                           json!({ "pippo": "ciao"}));
+
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
     // idle loop
     loop {
         select! {
             line = stdin.select_next_some() => {
-                domolibp2p::publish(&mut swarm);
+                let line = line.expect("Stdin error");
+                let mut args = line.split(" ");
+
+                match args.next(){
+                    Some("PUB") => {
+                        let topic_name = match args.next() {
+                            Some(topic_name) => Some(topic_name),
+                            None => None
+                        };
+
+                        let topic_uuid = match args.next() {
+                            Some(topic_uuid) => Some(topic_uuid),
+                            None => None
+                        };
+
+                        let value = match args.next() {
+                            Some(value) => Some(value),
+                            None => None
+                        };
+
+                        // se uno degli argomenti è vuoto
+                        if topic_name == None || topic_uuid == None || value == None{
+                            println!("topic_name, topic_uuid, value are mandatory arguments");
+                        } else{
+                            let topic_name= topic_name.unwrap();
+                            let topic_uuid= topic_uuid.unwrap();
+                            let value = value.unwrap();
+
+                            println!("{} {} {}", topic_name, topic_uuid, value);
+                            let val = json!({ "field": value});
+
+                            domo_cache.write_value(topic_name, topic_uuid, val.clone());
+                            domolibp2p::pub_element(&mut swarm, topic_name, topic_uuid, val);
+                        }
+                    },
+                    _ => {
+                        println!("expected PUB <topic_name> <topic_uuid> <json>");
+                    }
+                }
+
+                //domolibp2p::publish(&mut swarm);
+
             }
             event = swarm.select_next_some() => match event {
                 SwarmEvent::NewListenAddr { address, .. } => {
