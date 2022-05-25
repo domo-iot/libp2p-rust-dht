@@ -44,16 +44,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         storage: Box::new(
             domocache::SqliteStorage {
                 house_uuid: house_uuid.clone(),
-                sqlite_file: String::from("./prova.sqlite"),
+                sqlite_file: String::from("./uno.sqlite"),
                 sqlite_connection: None
             }),
         cache: HashMap::new()
     };
 
     domo_cache.init();
-
-    domo_cache.write_value(&String::from("ciao"), &String::from("ciao"),
-                           json!({ "pippo": "ciao"}));
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
@@ -121,6 +118,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         id,
                         peer_id,
                         &message.topic);
+
+                    type JsonMap = HashMap<String, serde_json::Value>;
+                    let val : Value = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
+                    let map: JsonMap = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
+
+                    let mut topic_name = String::from("");
+                    let mut topic_uuid = String::from("");
+
+                    for (key, value) in map.iter() {
+
+                        match key.as_str() {
+                            "topic_name" =>  {topic_name = String::from(value.as_str().unwrap());}
+                            "topic_uuid" => {topic_uuid = String::from(value.as_str().unwrap());}
+                            _ => ()
+                        }
+
+                    }
+
+
+                    //let topic_name = val.get("topic_name").unwrap();
+                    //let topic_uuid = val.get("topic_uuid").unwrap();
+
+                    domo_cache.write_value(&topic_name, &topic_uuid, val.clone());
                 },
                 SwarmEvent::Behaviour(domolibp2p::OutEvent::Mdns(
                     MdnsEvent::Discovered(list)
