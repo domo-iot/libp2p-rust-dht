@@ -102,12 +102,14 @@ impl DomoPersistentStorage for SqliteStorage{
             let jvalue: String = row.get(2)?;
             let jvalue = serde_json::from_str(&jvalue);
 
+            let pub_timestamp_string: String = row.get(4)?;
+
             Ok(
                 DomoCacheElement{
                     topic_name: row.get(0)?,
                     topic_uuid: row.get(1)?,
                     value: jvalue.unwrap(),
-                    publication_timestamp: row.get(4)?
+                    publication_timestamp: pub_timestamp_string.parse().unwrap()
                 })
         }).unwrap();
 
@@ -132,14 +134,19 @@ pub trait DomoCacheOperations{
 
     // method to write a value in cache
     fn write(&mut self, topic_name: &str, topic_uuid: &str, value: Value);
+
+    // method to write a value checking timestamp
+    // returns the value in cache if it is more recent that the one used while calling the method
+    fn write_with_timestamp_check(&mut self, topic_name: &str, topic_uuid: &str, elem: DomoCacheElement)
+                                  -> Option<DomoCacheElement>;
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DomoCacheElement {
     topic_name: String,
     topic_uuid: String,
     value: Value,
-    publication_timestamp: String
+    publication_timestamp: u128
 }
 
 pub struct DomoCache {
@@ -218,13 +225,36 @@ impl DomoCacheOperations for DomoCache {
         let elem = DomoCacheElement{
             topic_name: String::from(topic_name),
             topic_uuid: String::from(topic_uuid),
-            publication_timestamp: get_epoch_ms().to_string(),
+            publication_timestamp: get_epoch_ms(),
             value: value
         };
 
         self.insert_cache_element(elem, true);
 
+        // TBD: pubblicazione
+
     }
+
+    fn write_with_timestamp_check(&mut self, topic_name: &str, topic_uuid: &str, elem: DomoCacheElement)
+                                  -> Option<DomoCacheElement> {
+
+        match self.read_cache_element(topic_name, topic_uuid) {
+            Some(value) => {
+                if value.publication_timestamp > elem.publication_timestamp {
+                    Some(value)
+                } else {
+                    self.insert_cache_element(elem, true);
+                    None
+                }
+            },
+            None => {
+                self.insert_cache_element(elem, true);
+                None
+            }
+        }
+
+    }
+
 
 
 
@@ -250,6 +280,9 @@ fn test_write_and_read_key(){
 
 
     domo_cache.init();
+
+    domo_cache.print();
+
     domo_cache.write("Domo::Light", "luce-1", json!({ "connected": true}));
 
     let val =
@@ -316,5 +349,59 @@ fn test_write_twice_same_key(){
         read_cache_element("Domo::Light", "luce-1").unwrap().value;
 
     assert_eq!(json!({ "connected": false}), val)
+
+}
+
+
+
+#[test]
+fn test_write_old_timestamp(){
+    let house_uuid = String::from("CasaProva");
+    let mut domo_cache = DomoCache{
+        house_uuid: house_uuid.clone(),
+        is_persistent_cache: true,
+        storage: Box::new(
+            SqliteStorage {
+                house_uuid: house_uuid.clone(),
+                sqlite_file: String::from("./prova.sqlite"),
+                sqlite_connection: None
+            }),
+        cache: HashMap::new()
+    };
+
+    domo_cache.init();
+
+    domo_cache.write("Domo::Light", "luce-timestamp", json!({ "connected": true}));
+
+    let old_val =
+        domo_cache.read_cache_element("Domo::Light", "luce-timestamp").unwrap();
+
+    let el = DomoCacheElement{
+        topic_name: String::from("Domo::Light"),
+        topic_uuid: String::from("luce-timestamp"),
+        value: Default::default(),
+        publication_timestamp: 0
+    };
+
+    // mi aspetto il vecchio valore perchè non deve fare la scrittura
+
+    let ret = match domo_cache.write_with_timestamp_check("Domo::Light",
+                                                           "luce-timestamp",
+                                                           el) {
+        Some(val) => Some(val),
+        None => None
+    }.unwrap();
+
+    // mi aspetto di ricevere il vecchio valore
+    assert_eq!(ret, old_val);
+
+    domo_cache.write("Domo::Light", "luce-timestamp",
+                     json!({ "connected": false}));
+
+    let val = domo_cache.
+        read_cache_element("Domo::Light", "luce-timestamp").unwrap();
+
+    assert_ne!(ret, val);
+
 
 }
