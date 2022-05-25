@@ -4,7 +4,7 @@ use futures::{prelude::*, select};
 // Gossip includes
 use libp2p::gossipsub::MessageId;
 use libp2p::gossipsub::{
-    GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity, ValidationMode,
+    Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity, ValidationMode,
 };
 use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
 
@@ -92,42 +92,32 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>>{
 
 
 
-// We create a custom network behaviour that combines Kademlia and mDNS.
+// We create a custom network behaviour that combines mDNS and gossipsub.
 #[derive(NetworkBehaviour)]
-#[behaviour(event_process = true)]
+#[behaviour(out_event = "OutEvent")]
+
 pub struct DomoBehaviour {
-    mdns: Mdns,
-    gossipsub: gossipsub::Gossipsub
+    pub mdns: Mdns,
+    pub gossipsub: Gossipsub
 }
 
-impl NetworkBehaviourEventProcess<GossipsubEvent> for DomoBehaviour {
-    // Called when `gossip_pub_sub` produces an event.
-    fn inject_event(&mut self, event: GossipsubEvent) {
-        if let GossipsubEvent::Message {
-            propagation_source: peer_id,
-            message_id: id,
-            message
-        } = event {
-            println!(
-                "Got message: {} with id: {} from peer: {:?}, topic {}",
-                String::from_utf8_lossy(&message.data),
-                id,
-                peer_id,
-                &message.topic);
-
-        }
-    }
-
+#[derive(Debug)]
+pub enum OutEvent {
+    Gossipsub(GossipsubEvent),
+    Mdns(MdnsEvent),
 }
 
-impl NetworkBehaviourEventProcess<MdnsEvent> for DomoBehaviour {
-    // Called when `mdns` produces an event.
-    fn inject_event(&mut self, event: MdnsEvent) {
-        if let MdnsEvent::Discovered(list) = event {
-            for (peer_id, multiaddr) in list {
-                println!("Adding {} to pub_sub peers", peer_id);
-                self.gossipsub.add_explicit_peer(&peer_id);
-            }
-        }
+impl From<MdnsEvent> for OutEvent {
+    fn from(v: MdnsEvent) -> Self {
+        Self::Mdns(v)
     }
 }
+
+impl From<GossipsubEvent> for OutEvent {
+    fn from(v: GossipsubEvent) -> Self {
+        Self::Gossipsub(v)
+    }
+}
+
+
+
