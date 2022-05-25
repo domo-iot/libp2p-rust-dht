@@ -18,7 +18,7 @@ struct SqliteStorage {
 impl DomoPersistentStorage for SqliteStorage{
 
     fn init(&mut self){
-        self.sqlite_file = String::from("/home/domenico/");
+        self.sqlite_file = String::from("./");
         self.sqlite_file.push_str(&self.house_uuid);
         self.sqlite_file.push_str(&String::from(".sqlite"));
 
@@ -42,7 +42,7 @@ impl DomoPersistentStorage for SqliteStorage{
         println!("Store {} {}", key, key_value.to_string());
 
         self.sqlite_connection.as_ref().unwrap().execute(
-            "INSERT INTO domo_data (key, key_value, deleted) VALUES (?1, ?2, ?3)",
+            "INSERT OR REPLACE INTO domo_data (key, key_value, deleted) VALUES (?1, ?2, ?3)",
             params![key, key_value.to_string(), false],
         ).unwrap();
 
@@ -137,30 +137,31 @@ impl DomoCacheOperations for DomoCache {
 #[cfg(test)]
 
 #[test]
-// fn test_write_and_read_key(){
-//     let house_uuid = String::from("CasaProva");
-//     let mut domoCache = DomoCache{
-//         house_uuid: house_uuid.clone(),
-//         is_persistent_cache: true,
-//         storage: Box::new(
-//             SqliteStorage {
-//                 house_uuid: house_uuid.clone(),
-//                 sqlite_file: String::from("./prova.sqlite"),
-//                 sqlite_connection: None
-//             }),
-//         cache: HashMap::new()
-//     };
-//
-//
-//     domoCache.init();
-//
-//     domoCache.write("luce-1", &json!({ "connected": false}));
-//
-//     let val = domoCache.read("luce-1").unwrap();
-//     assert_eq!(json!({ "connected": false}), val)
-//
-// }
+fn test_write_and_read_key(){
+    let house_uuid = String::from("CasaProva");
+    let mut domoCache = DomoCache{
+        house_uuid: house_uuid.clone(),
+        is_persistent_cache: true,
+        storage: Box::new(
+            SqliteStorage {
+                house_uuid: house_uuid.clone(),
+                sqlite_file: String::from("./prova.sqlite"),
+                sqlite_connection: None
+            }),
+        cache: HashMap::new()
+    };
 
+
+    domoCache.init();
+
+    domoCache.write("luce-1", &json!({ "connected": true}));
+
+    let val = domoCache.read("luce-1").unwrap();
+    assert_eq!(json!({ "connected": true}), val)
+
+}
+
+#[test]
 fn test_populate_from_sqlite(){
     let house_uuid = String::from("CasaProva");
     let mut domoCache = DomoCache{
@@ -179,6 +180,6 @@ fn test_populate_from_sqlite(){
     domoCache.init();
 
     let val = domoCache.read("luce-1").unwrap();
-    assert_eq!(json!({ "connected": false}), val)
+    assert_eq!(json!({ "connected": true}), val)
 
 }
