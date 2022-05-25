@@ -1,10 +1,10 @@
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use libp2p::wasm_ext::ffi::ConnectionEvent;
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection, Result, OpenFlags};
 
 pub trait DomoPersistentStorage{
-    fn init(&mut self);
+    fn init(&mut self, write_access: bool);
     fn store(&mut self, key: &str, key_value: &Value);
     fn populate_map(&mut self, map: &mut HashMap<String, Value>);
 }
@@ -17,22 +17,28 @@ struct SqliteStorage {
 
 impl DomoPersistentStorage for SqliteStorage{
 
-    fn init(&mut self){
+    fn init(&mut self, write_access: bool){
+
         self.sqlite_file = String::from("./");
         self.sqlite_file.push_str(&self.house_uuid);
         self.sqlite_file.push_str(&String::from(".sqlite"));
 
 
-        let conn = Connection::open(&self.sqlite_file).unwrap();
-
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS domo_data (
+        let conn = if write_access == false {
+            Connection::open_with_flags(&self.sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap()
+        }
+        else {
+            let conn = Connection::open(&self.sqlite_file).unwrap();
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS domo_data (
                   key             TEXT PRIMARY KEY,
                   key_value       BLOB,
                   deleted         INTEGER
                   )",
-            [],
-        ).unwrap();
+                [],
+            ).unwrap();
+            conn
+        };
 
         self.sqlite_connection = Some(conn);
 
@@ -96,9 +102,9 @@ impl DomoCache{
 
     fn init(&mut self){
         // apro la connessione al DB e se non presente creo la tabella domo_data
-        if self.is_persistent_cache {
-            self.storage.init();
-        }
+
+        self.storage.init(self.is_persistent_cache);
+
 
         // popolo la mia cache con il contenuto dello sqlite
         self.storage.populate_map(&mut self.cache);
@@ -181,5 +187,38 @@ fn test_populate_from_sqlite(){
 
     let val = domoCache.read("luce-1").unwrap();
     assert_eq!(json!({ "connected": true}), val)
+
+}
+
+
+#[test]
+fn test_write_twice_same_key(){
+    let house_uuid = String::from("CasaProva");
+    let mut domoCache = DomoCache{
+        house_uuid: house_uuid.clone(),
+        is_persistent_cache: true,
+        storage: Box::new(
+            SqliteStorage {
+                house_uuid: house_uuid.clone(),
+                sqlite_file: String::from("./prova.sqlite"),
+                sqlite_connection: None
+            }),
+        cache: HashMap::new()
+    };
+
+
+    domoCache.init();
+
+    domoCache.write("luce-1", &json!({ "connected": true}));
+
+    let val = domoCache.read("luce-1").unwrap();
+
+    assert_eq!(json!({ "connected": true}), val);
+
+
+    domoCache.write("luce-1", &json!({ "connected": false}));
+
+    let val = domoCache.read("luce-1").unwrap();
+    assert_eq!(json!({ "connected": false}), val)
 
 }
