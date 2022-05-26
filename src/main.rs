@@ -36,19 +36,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut swarm = domolibp2p::start().await.unwrap();
 
-    let house_uuid = String::from("CasaProva");
-    let mut domo_cache = domocache::DomoCache {
-        house_uuid: house_uuid.clone(),
-        is_persistent_cache: true,
-        storage: Box::new(domocache::SqliteStorage {
-            house_uuid: house_uuid.clone(),
-            sqlite_file: String::from("./uno.sqlite"),
-            sqlite_connection: None,
-        }),
-        cache: HashMap::new(),
-    };
+    let house_uuid = "CasaProva";
+    let storage = domocache::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
 
-    domo_cache.init();
+    let mut domo_cache = domocache::DomoCache::new(house_uuid, true, storage);
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
