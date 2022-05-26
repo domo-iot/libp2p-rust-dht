@@ -12,7 +12,6 @@ pub fn get_epoch_ms() -> u128 {
 }
 
 pub trait DomoPersistentStorage {
-    fn init(&mut self, write_access: bool);
     fn store(&mut self, element: &DomoCacheElement, deleted: bool);
     fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
 }
@@ -20,28 +19,29 @@ pub trait DomoPersistentStorage {
 pub struct SqliteStorage {
     pub house_uuid: String,
     pub sqlite_file: String,
-    pub sqlite_connection: Option<Connection>,
+    pub sqlite_connection: Connection,
 }
 
-impl DomoPersistentStorage for SqliteStorage {
-    fn init(&mut self, write_access: bool) {
+impl SqliteStorage {
+    pub fn new(house_uuid: &str, sqlite_file: &str, write_access: bool) -> Self {
         let conn = if write_access == false {
-            match Connection::open_with_flags(&self.sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            match Connection::open_with_flags(sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
                 Ok(conn) => conn,
                 _ => {
                     panic!("Error while opening the sqlite DB");
                 }
             }
         } else {
-            let conn = match Connection::open(&self.sqlite_file) {
+            let conn = match Connection::open(sqlite_file) {
                 Ok(conn) => conn,
                 _ => {
                     panic!("Error while opening the sqlite DB");
                 }
             };
 
-            let res = match conn.execute(
-                "CREATE TABLE IF NOT EXISTS domo_data (
+            let res = conn
+                .execute(
+                    "CREATE TABLE IF NOT EXISTS domo_data (
                   topic_name             TEXT,
                   topic_uuid             TEXT,
                   value                  TEXT,
@@ -49,22 +49,24 @@ impl DomoPersistentStorage for SqliteStorage {
                   publication_timestamp   TEXT,
                   PRIMARY KEY (topic_name, topic_uuid)
                   )",
-                [],
-            ) {
-                Ok(ret) => ret,
-                _ => {
-                    panic!("Error while executing operation on sqlite DB");
-                }
-            };
+                    [],
+                )
+                .unwrap();
 
             conn
         };
 
-        self.sqlite_connection = Some(conn);
+        SqliteStorage {
+            house_uuid: house_uuid.to_owned(),
+            sqlite_file: sqlite_file.to_owned(),
+            sqlite_connection: conn,
+        }
     }
+}
 
+impl DomoPersistentStorage for SqliteStorage {
     fn store(&mut self, element: &DomoCacheElement, deleted: bool) {
-        let ret = match self.sqlite_connection.as_ref().unwrap().execute(
+        let ret = match self.sqlite_connection.execute(
             "INSERT OR REPLACE INTO domo_data\
              (topic_name, topic_uuid, value, deleted, publication_timestamp)\
               VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -87,8 +89,6 @@ impl DomoPersistentStorage for SqliteStorage {
         // read all not deleted elements
         let mut stmt = self
             .sqlite_connection
-            .as_ref()
-            .unwrap()
             .prepare("SELECT * FROM domo_data WHERE deleted=0")
             .unwrap();
 
@@ -151,24 +151,30 @@ pub struct DomoCacheElement {
     pub publication_timestamp: u128,
 }
 
-pub struct DomoCache {
+pub struct DomoCache<T: DomoPersistentStorage> {
     pub house_uuid: String,
     pub is_persistent_cache: bool,
-    pub storage: Box<dyn DomoPersistentStorage>,
+    pub storage: T,
     pub cache: HashMap<String, HashMap<String, DomoCacheElement>>,
 }
 
-impl DomoCache {
-    pub fn init(&mut self) {
-        // open DB connection, WRITE access if is_persistent_cache, READ ONLY otherwise
-        self.storage.init(self.is_persistent_cache);
+impl<T: DomoPersistentStorage> DomoCache<T> {
+    pub fn new(house_uuid: &str, is_persistent_cache: bool, storage: T) -> Self {
+        let mut c = DomoCache {
+            house_uuid: house_uuid.to_owned(),
+            is_persistent_cache: is_persistent_cache,
+            storage: storage,
+            cache: HashMap::new(),
+        };
 
         // popolo la mia cache con il contenuto dello sqlite
-        let ret = self.storage.get_all_elements();
+        let ret = c.storage.get_all_elements();
 
         for elem in ret {
-            self.insert_cache_element(elem, false);
+            c.insert_cache_element(elem, false);
         }
+
+        c
     }
 
     pub fn print(&self) {
@@ -182,7 +188,7 @@ impl DomoCache {
     }
 }
 
-impl DomoCacheOperations for DomoCache {
+impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
     fn insert_cache_element(&mut self, cache_element: DomoCacheElement, persist: bool) {
         // topic_name already present
         if self.cache.contains_key(&cache_element.topic_name) {
@@ -257,118 +263,109 @@ impl DomoCacheOperations for DomoCache {
     }
 }
 
-#[cfg(test)]
-#[test]
-fn test_write_and_read_key() {
-    let house_uuid = String::from("CasaProva");
-    let mut domo_cache = DomoCache {
-        house_uuid: house_uuid.clone(),
-        is_persistent_cache: true,
-        storage: Box::new(SqliteStorage {
-            house_uuid: house_uuid.clone(),
-            sqlite_file: String::from("./prova.sqlite"),
-            sqlite_connection: None,
-        }),
-        cache: HashMap::new(),
-    };
+mod tests {
+    use super::DomoCacheOperations;
 
-    domo_cache.init();
+    #[cfg(test)]
+    #[test]
+    fn test_write_and_read_key() {
+        let house_uuid = "CasaProva";
+        let storage = super::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
 
-    domo_cache.print();
+        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage);
 
-    domo_cache.write_value("Domo::Light", "luce-1", json!({ "connected": true}));
+        domo_cache.print();
 
-    let val = domo_cache
-        .read_cache_element("Domo::Light", "luce-1")
-        .unwrap()
-        .value;
-    assert_eq!(json!({ "connected": true}), val)
-}
+        domo_cache.write_value(
+            "Domo::Light",
+            "luce-1",
+            serde_json::json!({ "connected": true}),
+        );
 
-#[test]
-fn test_write_twice_same_key() {
-    let house_uuid = String::from("CasaProva");
-    let mut domo_cache = DomoCache {
-        house_uuid: house_uuid.clone(),
-        is_persistent_cache: true,
-        storage: Box::new(SqliteStorage {
-            house_uuid: house_uuid.clone(),
-            sqlite_file: String::from("./prova.sqlite"),
-            sqlite_connection: None,
-        }),
-        cache: HashMap::new(),
-    };
-
-    domo_cache.init();
-
-    domo_cache.write_value("Domo::Light", "luce-1", json!({ "connected": true}));
-
-    let val = domo_cache
-        .read_cache_element("Domo::Light", "luce-1")
-        .unwrap()
-        .value;
-
-    assert_eq!(json!({ "connected": true}), val);
-
-    domo_cache.write_value("Domo::Light", "luce-1", json!({ "connected": false}));
-
-    let val = domo_cache
-        .read_cache_element("Domo::Light", "luce-1")
-        .unwrap()
-        .value;
-
-    assert_eq!(json!({ "connected": false}), val)
-}
-
-#[test]
-fn test_write_old_timestamp() {
-    let house_uuid = String::from("CasaProva");
-    let mut domo_cache = DomoCache {
-        house_uuid: house_uuid.clone(),
-        is_persistent_cache: true,
-        storage: Box::new(SqliteStorage {
-            house_uuid: house_uuid.clone(),
-            sqlite_file: String::from("./prova.sqlite"),
-            sqlite_connection: None,
-        }),
-        cache: HashMap::new(),
-    };
-
-    domo_cache.init();
-
-    domo_cache.write_value("Domo::Light", "luce-timestamp", json!({ "connected": true}));
-
-    let old_val = domo_cache
-        .read_cache_element("Domo::Light", "luce-timestamp")
-        .unwrap();
-
-    let el = DomoCacheElement {
-        topic_name: String::from("Domo::Light"),
-        topic_uuid: String::from("luce-timestamp"),
-        value: Default::default(),
-        publication_timestamp: 0,
-    };
-
-    // mi aspetto il vecchio valore perchè non deve fare la scrittura
-
-    let ret = match domo_cache.write_with_timestamp_check("Domo::Light", "luce-timestamp", el) {
-        Some(val) => Some(val),
-        None => None,
+        let val = domo_cache
+            .read_cache_element("Domo::Light", "luce-1")
+            .unwrap()
+            .value;
+        assert_eq!(serde_json::json!({ "connected": true}), val)
     }
-    .unwrap();
 
-    // mi aspetto di ricevere il vecchio valore
-    assert_eq!(ret, old_val);
+    #[test]
+    fn test_write_twice_same_key() {
+        let house_uuid = "CasaProva";
+        let storage = super::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
 
-    domo_cache.write_value(
-        "Domo::Light",
-        "luce-timestamp",
-        json!({ "connected": false}),
-    );
+        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage);
 
-    let val = domo_cache
-        .read_cache_element("Domo::Light", "luce-timestamp")
-        .unwrap();
+        domo_cache.write_value(
+            "Domo::Light",
+            "luce-1",
+            serde_json::json!({ "connected": true}),
+        );
 
-    assert_ne!(ret, val);
+        let val = domo_cache
+            .read_cache_element("Domo::Light", "luce-1")
+            .unwrap()
+            .value;
+
+        assert_eq!(serde_json::json!({ "connected": true}), val);
+
+        domo_cache.write_value(
+            "Domo::Light",
+            "luce-1",
+            serde_json::json!({ "connected": false}),
+        );
+
+        let val = domo_cache
+            .read_cache_element("Domo::Light", "luce-1")
+            .unwrap()
+            .value;
+
+        assert_eq!(serde_json::json!({ "connected": false}), val)
+    }
+
+    #[test]
+    fn test_write_old_timestamp() {
+        let house_uuid = "CasaProva";
+        let storage = super::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
+
+        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage);
+
+        domo_cache.write_value(
+            "Domo::Light",
+            "luce-timestamp",
+            serde_json::json!({ "connected": true}),
+        );
+
+        let old_val = domo_cache
+            .read_cache_element("Domo::Light", "luce-timestamp")
+            .unwrap();
+
+        let el = super::DomoCacheElement {
+            topic_name: String::from("Domo::Light"),
+            topic_uuid: String::from("luce-timestamp"),
+            value: Default::default(),
+            publication_timestamp: 0,
+        };
+
+        // mi aspetto il vecchio valore perchè non deve fare la scrittura
+
+        let ret = domo_cache
+            .write_with_timestamp_check("Domo::Light", "luce-timestamp", el)
+            .unwrap();
+
+        // mi aspetto di ricevere il vecchio valore
+        assert_eq!(ret, old_val);
+
+        domo_cache.write_value(
+            "Domo::Light",
+            "luce-timestamp",
+            serde_json::json!({ "connected": false}),
+        );
+
+        let val = domo_cache
+            .read_cache_element("Domo::Light", "luce-timestamp")
+            .unwrap();
+
+        assert_ne!(ret, val);
+    }
 }
