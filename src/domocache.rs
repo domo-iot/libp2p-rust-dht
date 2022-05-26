@@ -1,5 +1,6 @@
 use libp2p::wasm_ext::ffi::ConnectionEvent;
 use rusqlite::{params, Connection, OpenFlags, Result};
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -9,6 +10,13 @@ pub fn get_epoch_ms() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis()
+}
+
+#[derive(Deserialize, Serialize)]
+pub struct DomoMessage {
+    pub topic_name: String,
+    pub topic_uuid: String,
+    pub payload: serde_json::Value,
 }
 
 pub trait DomoPersistentStorage {
@@ -235,7 +243,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
             value: value,
         };
 
-        self.insert_cache_element(elem, true);
+        self.insert_cache_element(elem, self.is_persistent_cache);
 
         // TBD: pubblicazione
     }
@@ -251,12 +259,12 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
                 if value.publication_timestamp > elem.publication_timestamp {
                     Some(value)
                 } else {
-                    self.insert_cache_element(elem, true);
+                    self.insert_cache_element(elem, self.is_persistent_cache);
                     None
                 }
             }
             None => {
-                self.insert_cache_element(elem, true);
+                self.insert_cache_element(elem, self.is_persistent_cache);
                 None
             }
         }

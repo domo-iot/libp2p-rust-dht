@@ -13,6 +13,7 @@ use libp2p::gossipsub::{
 use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
 
 use std::collections::hash_map::DefaultHasher;
+use std::env;
 use std::hash::{Hash, Hasher};
 
 //
@@ -30,6 +31,12 @@ use std::time::Duration;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
+    println!("Usage: ./domo-libp2p <sqlite_file_path>");
+
+    let args: Vec<String> = env::args().collect();
+
+    let sqlite_file = &args[1];
+
     env_logger::init();
 
     // resto in attesa della creazione dello swarm
@@ -37,7 +44,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut swarm = domolibp2p::start().await.unwrap();
 
     let house_uuid = "CasaProva";
-    let storage = domocache::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
+
+    let storage = domocache::SqliteStorage::new(house_uuid, sqlite_file, true);
 
     let mut domo_cache = domocache::DomoCache::new(house_uuid, true, storage);
 
@@ -52,20 +60,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 match args.next(){
                     Some("PUB") => {
-                        let topic_name = match args.next() {
-                            Some(topic_name) => Some(topic_name),
-                            None => None
-                        };
+                        let topic_name = args.next();
 
-                        let topic_uuid = match args.next() {
-                            Some(topic_uuid) => Some(topic_uuid),
-                            None => None
-                        };
+                        let topic_uuid = args.next();
 
-                        let value = match args.next() {
-                            Some(value) => Some(value),
-                            None => None
-                        };
+                        let value = args.next();
 
                         // se uno degli argomenti è vuoto
                         if topic_name == None || topic_uuid == None || value == None{
@@ -76,18 +75,25 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let value = value.unwrap();
 
                             println!("{} {} {}", topic_name, topic_uuid, value);
-                            let val = json!({ "field": value});
 
-                            domo_cache.write_value(topic_name, topic_uuid, val.clone());
-                            domolibp2p::pub_element(&mut swarm, topic_name, topic_uuid, val);
+                            let val = json!({ "payload": value,
+                                "topic_name": topic_name, "topic_uuid": topic_uuid});
+
+                            let m = domocache::DomoMessage {
+                                topic_name: topic_name.to_owned(),
+                                topic_uuid: topic_uuid.to_owned(),
+                                payload: val.clone()
+                            };
+
+
+                            domo_cache.write_value(topic_name, topic_uuid, val);
+                            domolibp2p::pub_element(&mut swarm, topic_name, topic_uuid, m);
                         }
                     },
                     _ => {
-                        println!("expected PUB <topic_name> <topic_uuid> <json>");
+                        println!("expected PUB <topic_name> <topic_uuid> <value>");
                     }
                 }
-
-                //domolibp2p::publish(&mut swarm);
 
             }
             event = swarm.select_next_some() => match event {
@@ -108,28 +114,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         peer_id,
                         &message.topic);
 
-                    type JsonMap = HashMap<String, serde_json::Value>;
-                    let val : Value = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
-                    let map: JsonMap = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
+                    let m : domocache::DomoMessage = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
 
-                    let mut topic_name = String::from("");
-                    let mut topic_uuid = String::from("");
-
-                    for (key, value) in map.iter() {
-
-                        match key.as_str() {
-                            "topic_name" =>  {topic_name = String::from(value.as_str().unwrap());}
-                            "topic_uuid" => {topic_uuid = String::from(value.as_str().unwrap());}
-                            _ => ()
-                        }
-
-                    }
-
-
-                    //let topic_name = val.get("topic_name").unwrap();
-                    //let topic_uuid = val.get("topic_uuid").unwrap();
-
-                    domo_cache.write_value(&topic_name, &topic_uuid, val.clone());
+                    domo_cache.write_value(&m.topic_name, &m.topic_uuid, m.payload);
                 },
                 SwarmEvent::Behaviour(domolibp2p::OutEvent::Mdns(
                     MdnsEvent::Discovered(list)
@@ -144,7 +131,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
                 _ => {}
             }
-        //async_std::task::sleep(Duration::from_secs(10)).await;
         }
     }
 }

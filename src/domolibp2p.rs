@@ -13,6 +13,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 //
 
+use crate::domocache;
 use libp2p::{
     development_transport, identity,
     mdns::{Mdns, MdnsConfig, MdnsEvent},
@@ -27,14 +28,11 @@ pub fn pub_element(
     swarm: &mut Swarm<DomoBehaviour>,
     topic_name: &str,
     topic_uuid: &str,
-    value: Value,
+    m: domocache::DomoMessage,
 ) {
     let topic = Topic::new("domo-data");
 
-    let m = json!( { "topic_name": topic_name, "topic_uuid": topic_uuid, "payload": value});
-
-    let m = m.to_string();
-    //println!("{}", message);
+    let m = serde_json::to_string(&m).unwrap();
 
     if let Err(e) = swarm
         .behaviour_mut()
