@@ -1,9 +1,9 @@
-mod domolibp2p;
 mod domocache;
+mod domolibp2p;
 
-use std::collections::HashMap;
 use async_std::{io, task};
 use futures::{prelude::*, select};
+use std::collections::HashMap;
 
 // Gossip includes
 use libp2p::gossipsub::MessageId;
@@ -17,17 +17,16 @@ use std::hash::{Hash, Hasher};
 
 //
 
+use crate::domocache::DomoCacheOperations;
 use libp2p::{
     development_transport, identity,
     mdns::{Mdns, MdnsConfig, MdnsEvent},
-    swarm::{NetworkBehaviourEventProcess},
+    swarm::NetworkBehaviourEventProcess,
     NetworkBehaviour, PeerId, Swarm,
 };
+use serde_json::{json, Value};
 use std::error::Error;
 use std::time::Duration;
-use serde_json::{Value, json};
-use crate::domocache::DomoCacheOperations;
-
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -38,16 +37,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let mut swarm = domolibp2p::start().await.unwrap();
 
     let house_uuid = String::from("CasaProva");
-    let mut domo_cache = domocache::DomoCache{
+    let mut domo_cache = domocache::DomoCache {
         house_uuid: house_uuid.clone(),
         is_persistent_cache: true,
-        storage: Box::new(
-            domocache::SqliteStorage {
-                house_uuid: house_uuid.clone(),
-                sqlite_file: String::from("./uno.sqlite"),
-                sqlite_connection: None
-            }),
-        cache: HashMap::new()
+        storage: Box::new(domocache::SqliteStorage {
+            house_uuid: house_uuid.clone(),
+            sqlite_file: String::from("./uno.sqlite"),
+            sqlite_connection: None,
+        }),
+        cache: HashMap::new(),
     };
 
     domo_cache.init();
@@ -159,5 +157,3 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 }
-
-

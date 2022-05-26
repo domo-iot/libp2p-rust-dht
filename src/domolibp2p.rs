@@ -4,7 +4,8 @@ use futures::{prelude::*, select};
 // Gossip includes
 use libp2p::gossipsub::MessageId;
 use libp2p::gossipsub::{
-    Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity, ValidationMode,
+    Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity,
+    ValidationMode,
 };
 use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
 
@@ -15,15 +16,19 @@ use std::hash::{Hash, Hasher};
 use libp2p::{
     development_transport, identity,
     mdns::{Mdns, MdnsConfig, MdnsEvent},
-    swarm::{NetworkBehaviourEventProcess},
+    swarm::NetworkBehaviourEventProcess,
     NetworkBehaviour, PeerId, Swarm,
 };
+use serde_json::{json, Value};
 use std::error::Error;
 use std::time::Duration;
-use serde_json::{Value, json};
 
-pub fn pub_element(swarm: &mut Swarm<DomoBehaviour>, topic_name: &str, topic_uuid: &str, value: Value){
-
+pub fn pub_element(
+    swarm: &mut Swarm<DomoBehaviour>,
+    topic_name: &str,
+    topic_uuid: &str,
+    value: Value,
+) {
     let topic = Topic::new("domo-data");
 
     let m = json!( { "topic_name": topic_name, "topic_uuid": topic_uuid, "payload": value});
@@ -31,39 +36,39 @@ pub fn pub_element(swarm: &mut Swarm<DomoBehaviour>, topic_name: &str, topic_uui
     let m = m.to_string();
     //println!("{}", message);
 
-    if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), m.as_bytes()){
-            println!("Publish error: {:?}", e);
+    if let Err(e) = swarm
+        .behaviour_mut()
+        .gossipsub
+        .publish(topic.clone(), m.as_bytes())
+    {
+        println!("Publish error: {:?}", e);
+    } else {
+        println!("Publishing message");
     }
-    else{
-            println!("Publishing message");
-    }
-
 }
 
-
-
-pub fn publish(swarm: &mut Swarm<DomoBehaviour>){
-
+pub fn publish(swarm: &mut Swarm<DomoBehaviour>) {
     let topic = Topic::new("domo-data");
 
     for i in 0..1000 {
-
         let message = i.to_string();
 
-        if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic.clone(), message.as_bytes()){
+        if let Err(e) = swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic.clone(), message.as_bytes())
+        {
             println!("Publish error: {:?}", e);
-        }
-        else{
+        } else {
             println!("Publishing message {}", i);
         }
     }
 }
 
-pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>>{
+pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
-
 
     // Create a Gossipsub topic
     let topic = Topic::new("domo-data");
@@ -73,7 +78,6 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>>{
 
     // Create a swarm to manage peers and events.
     let mut swarm = {
-
         let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
 
         // To content-address message, we can take the hash of message and use it as an ID.
@@ -100,7 +104,7 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>>{
         // subscribes to our topic
         gossipsub.subscribe(&topic).unwrap();
 
-        let behaviour = DomoBehaviour { mdns, gossipsub};
+        let behaviour = DomoBehaviour { mdns, gossipsub };
         Swarm::new(transport, behaviour, local_peer_id)
     };
 
@@ -110,15 +114,13 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>>{
     Ok(swarm)
 }
 
-
-
 // We create a custom network behaviour that combines mDNS and gossipsub.
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "OutEvent")]
 
 pub struct DomoBehaviour {
     pub mdns: Mdns,
-    pub gossipsub: Gossipsub
+    pub gossipsub: Gossipsub,
 }
 
 #[derive(Debug)]
@@ -138,6 +140,3 @@ impl From<GossipsubEvent> for OutEvent {
         Self::Gossipsub(v)
     }
 }
-
-
-
