@@ -47,13 +47,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let storage = domocache::SqliteStorage::new(house_uuid, sqlite_file, true);
 
-    let mut domo_cache = domocache::DomoCache::new(house_uuid, true, storage);
+    let mut domo_cache = domocache::DomoCache::new(house_uuid, true, storage, swarm);
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
     // idle loop
     loop {
         select! {
+            ret = domo_cache.wait_for_messages().fuse() => {
+                println!("Waiting ... ");
+            },
             line = stdin.select_next_some() => {
                 let line = line.expect("Stdin error");
                 let mut args = line.split(" ");
@@ -79,15 +82,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let val = json!({ "payload": value,
                                 "topic_name": topic_name, "topic_uuid": topic_uuid});
 
-                            let m = domocache::DomoMessage {
-                                topic_name: topic_name.to_owned(),
-                                topic_uuid: topic_uuid.to_owned(),
-                                payload: val.clone()
-                            };
-
-
                             domo_cache.write_value(topic_name, topic_uuid, val);
-                            domolibp2p::pub_element(&mut swarm, topic_name, topic_uuid, m);
                         }
                     },
                     _ => {
@@ -96,41 +91,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
 
             }
-            event = swarm.select_next_some() => match event {
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("Listening in {:?}", address);
-                },
-                SwarmEvent::Behaviour(
-                    domolibp2p::OutEvent::Gossipsub(
-                    GossipsubEvent::Message{
-                    propagation_source: peer_id,
-                    message_id: id,
-                    message
-                        })) => {
-                    println!(
-                        "Got message: {} with id: {} from peer: {:?}, topic {}",
-                        String::from_utf8_lossy(&message.data),
-                        id,
-                        peer_id,
-                        &message.topic);
 
-                    let m : domocache::DomoMessage = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
 
-                    domo_cache.write_value(&m.topic_name, &m.topic_uuid, m.payload);
-                },
-                SwarmEvent::Behaviour(domolibp2p::OutEvent::Mdns(
-                    MdnsEvent::Discovered(list)
-                )) => {
-                    for (peer, _) in list {
-                        swarm
-                            .behaviour_mut()
-                            .gossipsub
-                            .add_explicit_peer(&peer);
-                        println!("Discovered peer {}", peer);
-                    }
-                }
-                _ => {}
-            }
         }
     }
 }

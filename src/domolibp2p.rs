@@ -24,45 +24,6 @@ use serde_json::{json, Value};
 use std::error::Error;
 use std::time::Duration;
 
-pub fn pub_element(
-    swarm: &mut Swarm<DomoBehaviour>,
-    topic_name: &str,
-    topic_uuid: &str,
-    m: domocache::DomoMessage,
-) {
-    let topic = Topic::new("domo-data");
-
-    let m = serde_json::to_string(&m).unwrap();
-
-    if let Err(e) = swarm
-        .behaviour_mut()
-        .gossipsub
-        .publish(topic.clone(), m.as_bytes())
-    {
-        println!("Publish error: {:?}", e);
-    } else {
-        println!("Publishing message");
-    }
-}
-
-pub fn publish(swarm: &mut Swarm<DomoBehaviour>) {
-    let topic = Topic::new("domo-data");
-
-    for i in 0..1000 {
-        let message = i.to_string();
-
-        if let Err(e) = swarm
-            .behaviour_mut()
-            .gossipsub
-            .publish(topic.clone(), message.as_bytes())
-        {
-            println!("Publish error: {:?}", e);
-        } else {
-            println!("Publishing message {}", i);
-        }
-    }
-}
-
 pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();

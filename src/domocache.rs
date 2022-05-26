@@ -1,9 +1,19 @@
+use crate::domolibp2p::DomoBehaviour;
+use futures::{prelude::*, select};
+use libp2p::mdns::{Mdns, MdnsConfig, MdnsEvent};
 use libp2p::wasm_ext::ffi::ConnectionEvent;
+use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
 use rusqlite::{params, Connection, OpenFlags, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::error::Error;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use libp2p::gossipsub::{
+    Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity,
+    ValidationMode,
+};
 
 pub fn get_epoch_ms() -> u128 {
     SystemTime::now()
@@ -17,6 +27,7 @@ pub struct DomoMessage {
     pub topic_name: String,
     pub topic_uuid: String,
     pub payload: serde_json::Value,
+    pub publication_timestamp: u128,
 }
 
 pub trait DomoPersistentStorage {
@@ -164,15 +175,76 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub is_persistent_cache: bool,
     pub storage: T,
     pub cache: HashMap<String, HashMap<String, DomoCacheElement>>,
+    pub swarm: libp2p::Swarm<DomoBehaviour>,
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {
-    pub fn new(house_uuid: &str, is_persistent_cache: bool, storage: T) -> Self {
+    pub async fn wait_for_messages(&mut self) -> std::result::Result<(), Box<dyn Error>> {
+        loop {
+            select! {
+                event = self.swarm.select_next_some() => match event {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        println!("Listening in {:?}", address);
+                    },
+                    SwarmEvent::Behaviour(
+                        crate::domolibp2p::OutEvent::Gossipsub(
+                        GossipsubEvent::Message{
+                        propagation_source: peer_id,
+                        message_id: id,
+                        message})) => {
+                            println!(
+                            "Got message: {} with id: {} from peer: {:?}, topic {}",
+                            String::from_utf8_lossy(&message.data),
+                            id,
+                            peer_id,
+                            &message.topic);
+
+                        let m : DomoMessage = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
+
+                        let el = DomoCacheElement {
+                            topic_name: String::from(&m.topic_name),
+                            topic_uuid: String::from(&m.topic_uuid),
+                            value: m.payload,
+                            publication_timestamp: m.publication_timestamp
+                        };
+
+                        self.write_with_timestamp_check(
+                            &m.topic_name,
+                            &m.topic_uuid,
+                            el,
+                        );
+
+                        //self.write_value(&m.topic_name, &m.topic_uuid, m.payload);
+                    },
+                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
+                        libp2p::mdns::MdnsEvent::Discovered(list)
+                    )) => {
+                        for (peer, _) in list {
+                            self.swarm
+                            .behaviour_mut()
+                            .gossipsub
+                            .add_explicit_peer(&peer);
+                        println!("Discovered peer {}", peer);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    pub fn new(
+        house_uuid: &str,
+        is_persistent_cache: bool,
+        storage: T,
+        swarm: libp2p::Swarm<DomoBehaviour>,
+    ) -> Self {
         let mut c = DomoCache {
             house_uuid: house_uuid.to_owned(),
             is_persistent_cache: is_persistent_cache,
             storage: storage,
             cache: HashMap::new(),
+            swarm: swarm,
         };
 
         // popolo la mia cache con il contenuto dello sqlite
@@ -181,8 +253,24 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         for elem in ret {
             c.insert_cache_element(elem, false);
         }
-
         c
+    }
+
+    pub fn gossip_pub(&mut self, topic_name: &str, topic_uuid: &str, m: DomoMessage) {
+        let topic = Topic::new("domo-data");
+
+        let m = serde_json::to_string(&m).unwrap();
+
+        if let Err(e) = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic.clone(), m.as_bytes())
+        {
+            println!("Publish error: {:?}", e);
+        } else {
+            println!("Publishing message");
+        }
     }
 
     pub fn print(&self) {
@@ -236,16 +324,29 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
     }
 
     fn write_value(&mut self, topic_name: &str, topic_uuid: &str, value: Value) {
+        let timest = get_epoch_ms();
         let elem = DomoCacheElement {
             topic_name: String::from(topic_name),
             topic_uuid: String::from(topic_uuid),
-            publication_timestamp: get_epoch_ms(),
-            value: value,
+            publication_timestamp: timest,
+            value: value.clone(),
         };
 
         self.insert_cache_element(elem, self.is_persistent_cache);
 
         // TBD: pubblicazione
+
+        let val = json!({ "payload": value,
+                                "topic_name": topic_name, "topic_uuid": topic_uuid});
+
+        let m = DomoMessage {
+            topic_name: topic_name.to_owned(),
+            topic_uuid: topic_uuid.to_owned(),
+            payload: val,
+            publication_timestamp: timest,
+        };
+
+        self.gossip_pub(topic_name, topic_uuid, m);
     }
 
     fn write_with_timestamp_check(
