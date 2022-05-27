@@ -13,7 +13,6 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 //
 
-use crate::domocache;
 use libp2p::{
     development_transport, identity,
     mdns::{Mdns, MdnsConfig, MdnsEvent},
