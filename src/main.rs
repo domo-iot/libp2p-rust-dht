@@ -4,15 +4,20 @@ mod domolibp2p;
 use async_std::{io, task};
 use futures::{prelude::*, select};
 use serde_json::{json, Value};
-use std::env;
 use std::error::Error;
 use std::time::Duration;
+use std::{env, time};
 
+use chrono::prelude::*;
 use domocache::DomoCacheOperations;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("Usage: ./domo-libp2p <sqlite_file_path>");
+
+    let local = Utc::now();
+
+    println!("Program started at {:?}", local);
 
     let args: Vec<String> = env::args().collect();
 

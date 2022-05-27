@@ -1,13 +1,12 @@
-use async_std::{io, task};
-use futures::{prelude::*, select};
+use async_std::task;
 
 // Gossip includes
+use libp2p::gossipsub;
 use libp2p::gossipsub::MessageId;
 use libp2p::gossipsub::{
     Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity,
     ValidationMode,
 };
-use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -36,7 +35,13 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
 
     // Create a swarm to manage peers and events.
     let mut swarm = {
-        let mdns = task::block_on(Mdns::new(MdnsConfig::default()))?;
+        let mdnsconf = MdnsConfig {
+            ttl: Duration::from_secs(10 * 60),
+            query_interval: Duration::from_secs(10),
+            enable_ipv6: false,
+        };
+
+        let mdns = task::block_on(Mdns::new(mdnsconf))?;
 
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &GossipsubMessage| {
