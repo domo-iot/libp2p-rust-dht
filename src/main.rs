@@ -51,7 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         select! {
             ret = domo_cache.wait_for_messages().fuse() => {
-                println!("Waiting ... ");
+                println!("Application got message ... ");
             },
             line = stdin.select_next_some() => {
                 let line = line.expect("Stdin error");
