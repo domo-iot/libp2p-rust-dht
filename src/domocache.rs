@@ -22,16 +22,8 @@ pub fn get_epoch_ms() -> u128 {
         .as_millis()
 }
 
-#[derive(Deserialize, Serialize)]
-pub struct DomoMessage {
-    pub topic_name: String,
-    pub topic_uuid: String,
-    pub payload: serde_json::Value,
-    pub publication_timestamp: u128,
-}
-
 pub trait DomoPersistentStorage {
-    fn store(&mut self, element: &DomoCacheElement, deleted: bool);
+    fn store(&mut self, element: &DomoCacheElement);
     fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
 }
 
@@ -84,7 +76,7 @@ impl SqliteStorage {
 }
 
 impl DomoPersistentStorage for SqliteStorage {
-    fn store(&mut self, element: &DomoCacheElement, deleted: bool) {
+    fn store(&mut self, element: &DomoCacheElement) {
         let ret = match self.sqlite_connection.execute(
             "INSERT OR REPLACE INTO domo_data\
              (topic_name, topic_uuid, value, deleted, publication_timestamp)\
@@ -93,7 +85,7 @@ impl DomoPersistentStorage for SqliteStorage {
                 element.topic_name,
                 element.topic_uuid,
                 element.value.to_string(),
-                deleted,
+                element.deleted,
                 element.publication_timestamp.to_string()
             ],
         ) {
@@ -122,6 +114,7 @@ impl DomoPersistentStorage for SqliteStorage {
                     topic_name: row.get(0)?,
                     topic_uuid: row.get(1)?,
                     value: jvalue.unwrap(),
+                    deleted: row.get(3)?,
                     publication_timestamp: pub_timestamp_string.parse().unwrap(),
                 })
             })
@@ -139,7 +132,12 @@ impl DomoPersistentStorage for SqliteStorage {
 
 pub trait DomoCacheOperations {
     // method to write a DomoCacheElement
-    fn insert_cache_element(&mut self, cache_element: DomoCacheElement, persist: bool);
+    fn insert_cache_element(
+        &mut self,
+        cache_element: DomoCacheElement,
+        persist: bool,
+        publish: bool,
+    );
 
     // method to read a DomoCacheElement
     fn read_cache_element(
@@ -162,11 +160,13 @@ pub trait DomoCacheOperations {
     ) -> Option<DomoCacheElement>;
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+
 pub struct DomoCacheElement {
     pub topic_name: String,
     pub topic_uuid: String,
     pub value: Value,
+    pub deleted: bool,
     pub publication_timestamp: u128,
 }
 
@@ -199,19 +199,15 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                             peer_id,
                             &message.topic);
 
-                        let m : DomoMessage = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
+                        let m : DomoCacheElement = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
 
-                        let el = DomoCacheElement {
-                            topic_name: String::from(&m.topic_name),
-                            topic_uuid: String::from(&m.topic_uuid),
-                            value: m.payload,
-                            publication_timestamp: m.publication_timestamp
-                        };
+                        let topic_name = m.topic_name.clone();
+                        let topic_uuid = m.topic_uuid.clone();
 
                         self.write_with_timestamp_check(
-                            &m.topic_name,
-                            &m.topic_uuid,
-                            el,
+                            &topic_name,
+                            &topic_uuid,
+                            m
                         );
 
                         //self.write_value(&m.topic_name, &m.topic_uuid, m.payload);
@@ -233,12 +229,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    pub fn new(
-        house_uuid: &str,
-        is_persistent_cache: bool,
-        storage: T,
-        swarm: libp2p::Swarm<DomoBehaviour>,
-    ) -> Self {
+    pub async fn new(house_uuid: &str, is_persistent_cache: bool, storage: T) -> Self {
+        let mut swarm = crate::domolibp2p::start().await.unwrap();
+
         let mut c = DomoCache {
             house_uuid: house_uuid.to_owned(),
             is_persistent_cache: is_persistent_cache,
@@ -251,12 +244,13 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let ret = c.storage.get_all_elements();
 
         for elem in ret {
-            c.insert_cache_element(elem, false);
+            // non ripubblicp
+            c.insert_cache_element(elem, false, false);
         }
         c
     }
 
-    pub fn gossip_pub(&mut self, topic_name: &str, topic_uuid: &str, m: DomoMessage) {
+    pub fn gossip_pub(&mut self, topic_name: &str, topic_uuid: &str, m: DomoCacheElement) {
         let topic = Topic::new("domo-data");
 
         let m = serde_json::to_string(&m).unwrap();
@@ -285,7 +279,12 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 }
 
 impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
-    fn insert_cache_element(&mut self, cache_element: DomoCacheElement, persist: bool) {
+    fn insert_cache_element(
+        &mut self,
+        cache_element: DomoCacheElement,
+        persist: bool,
+        publish: bool,
+    ) {
         // topic_name already present
         if self.cache.contains_key(&cache_element.topic_name) {
             self.cache
@@ -303,7 +302,14 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         }
 
         if persist {
-            self.storage.store(&cache_element, false);
+            self.storage.store(&cache_element);
+        }
+
+        if publish {
+            let topic_name = cache_element.topic_name.clone();
+            let topic_uuid = cache_element.topic_uuid.clone();
+
+            self.gossip_pub(&topic_name, &topic_uuid, cache_element);
         }
     }
 
@@ -323,6 +329,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         }
     }
 
+    // metodo chiamato dall'applicazione, metto in cache e pubblico
     fn write_value(&mut self, topic_name: &str, topic_uuid: &str, value: Value) {
         let timest = get_epoch_ms();
         let elem = DomoCacheElement {
@@ -330,23 +337,10 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
             topic_uuid: String::from(topic_uuid),
             publication_timestamp: timest,
             value: value.clone(),
+            deleted: false,
         };
 
-        self.insert_cache_element(elem, self.is_persistent_cache);
-
-        // TBD: pubblicazione
-
-        let val = json!({ "payload": value,
-                                "topic_name": topic_name, "topic_uuid": topic_uuid});
-
-        let m = DomoMessage {
-            topic_name: topic_name.to_owned(),
-            topic_uuid: topic_uuid.to_owned(),
-            payload: val,
-            publication_timestamp: timest,
-        };
-
-        self.gossip_pub(topic_name, topic_uuid, m);
+        self.insert_cache_element(elem.clone(), self.is_persistent_cache, true);
     }
 
     fn write_with_timestamp_check(
@@ -360,12 +354,14 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
                 if value.publication_timestamp > elem.publication_timestamp {
                     Some(value)
                 } else {
-                    self.insert_cache_element(elem, self.is_persistent_cache);
+                    // inserisco in cache ma non ripubblico
+                    self.insert_cache_element(elem, self.is_persistent_cache, false);
                     None
                 }
             }
             None => {
-                self.insert_cache_element(elem, self.is_persistent_cache);
+                // inserisco in cache ma non ripubblico
+                self.insert_cache_element(elem, self.is_persistent_cache, false);
                 None
             }
         }
@@ -374,13 +370,13 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
 
 mod tests {
     use super::DomoCacheOperations;
+    use crate::domolibp2p::DomoBehaviour;
 
     #[cfg(test)]
     #[test]
     fn test_write_and_read_key() {
         let house_uuid = "CasaProva";
         let storage = super::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
-
         let mut domo_cache = super::DomoCache::new(house_uuid, true, storage);
 
         domo_cache.print();
@@ -453,6 +449,7 @@ mod tests {
             topic_name: String::from("Domo::Light"),
             topic_uuid: String::from("luce-timestamp"),
             value: Default::default(),
+            deleted: false,
             publication_timestamp: 0,
         };
 
