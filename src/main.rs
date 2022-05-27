@@ -39,15 +39,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     env_logger::init();
 
-    // resto in attesa della creazione dello swarm
-
-    let mut swarm = domolibp2p::start().await.unwrap();
-
     let house_uuid = "CasaProva";
 
     let storage = domocache::SqliteStorage::new(house_uuid, sqlite_file, true);
 
-    let mut domo_cache = domocache::DomoCache::new(house_uuid, true, storage, swarm);
+    let mut domo_cache = domocache::DomoCache::new(house_uuid, true, storage).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
@@ -79,8 +75,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             println!("{} {} {}", topic_name, topic_uuid, value);
 
-                            let val = json!({ "payload": value,
-                                "topic_name": topic_name, "topic_uuid": topic_uuid});
+                            let val = json!({ "payload": value});
 
                             domo_cache.write_value(topic_name, topic_uuid, val);
                         }
