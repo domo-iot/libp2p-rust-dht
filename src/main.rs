@@ -44,6 +44,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let mut args = line.split(" ");
 
                 match args.next(){
+                    Some("PRINT") => {
+                        domo_cache.print()
+                    }
+                    Some("PEERS") => {
+                        println!("Peers:");
+                        for (peer, _) in domo_cache
+                            .swarm
+                            .behaviour_mut()
+                            .gossipsub.all_peers() {
+
+                            println!("{:?}", peer.to_string());
+                        }
+
+                    }
                     Some("PUB") => {
                         let topic_name = args.next();
 
