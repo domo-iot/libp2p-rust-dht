@@ -308,7 +308,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             println!(" TopicName {} ", topic_name);
 
             for (topic_uuid, value) in topic_name_map.iter() {
-                println!("uuid: {} value: {}", topic_uuid, value.value.to_string());
+                println!("{:?}", value);
             }
         }
     }
