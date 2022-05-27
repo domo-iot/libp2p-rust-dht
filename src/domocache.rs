@@ -179,52 +179,58 @@ pub struct DomoCache<T: DomoPersistentStorage> {
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {
-    pub async fn wait_for_messages(&mut self) -> std::result::Result<(), Box<dyn Error>> {
+    pub async fn wait_for_messages(
+        &mut self,
+    ) -> std::result::Result<DomoCacheElement, Box<dyn Error>> {
         loop {
-            select! {
-                event = self.swarm.select_next_some() => match event {
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("Listening in {:?}", address);
-                    },
-                    SwarmEvent::Behaviour(
-                        crate::domolibp2p::OutEvent::Gossipsub(
-                        GossipsubEvent::Message{
+            let event = self.swarm.select_next_some().await;
+            match event {
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    println!("Listening in {:?}", address);
+                }
+                SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
+                    GossipsubEvent::Message {
                         propagation_source: peer_id,
                         message_id: id,
-                        message})) => {
-                            println!(
-                            "Got message: {} with id: {} from peer: {:?}, topic {}",
-                            String::from_utf8_lossy(&message.data),
-                            id,
-                            peer_id,
-                            &message.topic);
-
-                        let m : DomoCacheElement = serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
-
-                        let topic_name = m.topic_name.clone();
-                        let topic_uuid = m.topic_uuid.clone();
-
-                        self.write_with_timestamp_check(
-                            &topic_name,
-                            &topic_uuid,
-                            m
-                        );
-
-                        //self.write_value(&m.topic_name, &m.topic_uuid, m.payload);
+                        message,
                     },
-                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
-                        libp2p::mdns::MdnsEvent::Discovered(list)
-                    )) => {
-                        for (peer, _) in list {
-                            self.swarm
+                )) => {
+                    println!(
+                        "Got message: {} with id: {} from peer: {:?}, topic {}",
+                        String::from_utf8_lossy(&message.data),
+                        id,
+                        peer_id,
+                        &message.topic
+                    );
+
+                    let m: DomoCacheElement =
+                        serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
+
+                    let topic_name = m.topic_name.clone();
+                    let topic_uuid = m.topic_uuid.clone();
+
+                    match self.write_with_timestamp_check(&topic_name, &topic_uuid, m.clone()) {
+                        None => {
+                            println!("New message received");
+                            return Ok(m);
+                        }
+                        _ => {
+                            println!("Old message received");
+                        }
+                    }
+                }
+                SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
+                    libp2p::mdns::MdnsEvent::Discovered(list),
+                )) => {
+                    for (peer, _) in list {
+                        self.swarm
                             .behaviour_mut()
                             .gossipsub
                             .add_explicit_peer(&peer);
                         println!("Discovered peer {}", peer);
-                        }
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
     }
