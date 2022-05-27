@@ -1,4 +1,3 @@
-use crate::domolibp2p::DomoBehaviour;
 use futures::{prelude::*, select};
 use libp2p::mdns::{Mdns, MdnsConfig, MdnsEvent};
 use libp2p::wasm_ext::ffi::ConnectionEvent;
@@ -175,7 +174,7 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub is_persistent_cache: bool,
     pub storage: T,
     pub cache: HashMap<String, HashMap<String, DomoCacheElement>>,
-    pub swarm: libp2p::Swarm<DomoBehaviour>,
+    pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {

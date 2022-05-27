@@ -3,31 +3,12 @@ mod domolibp2p;
 
 use async_std::{io, task};
 use futures::{prelude::*, select};
-use std::collections::HashMap;
-
-// Gossip includes
-use libp2p::gossipsub::MessageId;
-use libp2p::gossipsub::{
-    GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity, ValidationMode,
-};
-use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
-
-use std::collections::hash_map::DefaultHasher;
-use std::env;
-use std::hash::{Hash, Hasher};
-
-//
-
-use crate::domocache::DomoCacheOperations;
-use libp2p::{
-    development_transport, identity,
-    mdns::{Mdns, MdnsConfig, MdnsEvent},
-    swarm::NetworkBehaviourEventProcess,
-    NetworkBehaviour, PeerId, Swarm,
-};
 use serde_json::{json, Value};
+use std::env;
 use std::error::Error;
 use std::time::Duration;
+
+use domocache::DomoCacheOperations;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -51,7 +32,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         select! {
             ret = domo_cache.wait_for_messages().fuse() => {
-                println!("Application got message ... ");
+                println!("Application got message ... {:?}", ret);
             },
             line = stdin.select_next_some() => {
                 let line = line.expect("Stdin error");
