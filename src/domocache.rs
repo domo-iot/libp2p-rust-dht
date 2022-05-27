@@ -1,18 +1,15 @@
-use futures::{prelude::*, select};
-use libp2p::mdns::{Mdns, MdnsConfig, MdnsEvent};
-use libp2p::wasm_ext::ffi::ConnectionEvent;
-use libp2p::{gossipsub, swarm::SwarmEvent, Multiaddr};
-use rusqlite::{params, Connection, OpenFlags, Result};
+use futures::prelude::*;
+
+use chrono::prelude::*;
+use libp2p::swarm::SwarmEvent;
+use rusqlite::{params, Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 use std::collections::HashMap;
 use std::error::Error;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use libp2p::gossipsub::{
-    Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity,
-    ValidationMode,
-};
+use libp2p::gossipsub::IdentTopic as Topic;
 
 pub fn get_epoch_ms() -> u128 {
     SystemTime::now()
@@ -49,7 +46,7 @@ impl SqliteStorage {
                 }
             };
 
-            let res = conn
+            let _ = conn
                 .execute(
                     "CREATE TABLE IF NOT EXISTS domo_data (
                   topic_name             TEXT,
@@ -57,6 +54,7 @@ impl SqliteStorage {
                   value                  TEXT,
                   deleted                INTEGER,
                   publication_timestamp   TEXT,
+                  publisher_peer_id       TEXT,
                   PRIMARY KEY (topic_name, topic_uuid)
                   )",
                     [],
@@ -76,16 +74,17 @@ impl SqliteStorage {
 
 impl DomoPersistentStorage for SqliteStorage {
     fn store(&mut self, element: &DomoCacheElement) {
-        let ret = match self.sqlite_connection.execute(
+        let _ = match self.sqlite_connection.execute(
             "INSERT OR REPLACE INTO domo_data\
-             (topic_name, topic_uuid, value, deleted, publication_timestamp)\
-              VALUES (?1, ?2, ?3, ?4, ?5)",
+             (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![
                 element.topic_name,
                 element.topic_uuid,
                 element.value.to_string(),
                 element.deleted,
-                element.publication_timestamp.to_string()
+                element.publication_timestamp.to_string(),
+                element.publisher_peer_id
             ],
         ) {
             Ok(ret) => ret,
@@ -115,6 +114,7 @@ impl DomoPersistentStorage for SqliteStorage {
                     value: jvalue.unwrap(),
                     deleted: row.get(3)?,
                     publication_timestamp: pub_timestamp_string.parse().unwrap(),
+                    publisher_peer_id: row.get(5)?,
                 })
             })
             .unwrap();
@@ -167,6 +167,7 @@ pub struct DomoCacheElement {
     pub value: Value,
     pub deleted: bool,
     pub publication_timestamp: u128,
+    pub publisher_peer_id: String,
 }
 
 pub struct DomoCache<T: DomoPersistentStorage> {
@@ -175,6 +176,7 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub storage: T,
     pub cache: HashMap<String, HashMap<String, DomoCacheElement>>,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
+    pub local_peer_id: String,
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {
@@ -184,11 +186,27 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         loop {
             let event = self.swarm.select_next_some().await;
             match event {
+                SwarmEvent::ExpiredListenAddr { address, .. } => {
+                    println!("Address {:?} expired", address);
+                }
+                SwarmEvent::ConnectionClosed { .. } => {
+                    println!("Connection closed");
+                }
+                SwarmEvent::ListenerError { .. } => {
+                    println!("Listener Error");
+                }
+                SwarmEvent::OutgoingConnectionError { .. } => {
+                    println!("Outgoing connection error");
+                }
+                SwarmEvent::ListenerClosed { .. } => {
+                    println!("Listener Closed");
+                }
+
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!("Listening in {:?}", address);
                 }
                 SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
-                    GossipsubEvent::Message {
+                    libp2p::gossipsub::GossipsubEvent::Message {
                         propagation_source: peer_id,
                         message_id: id,
                         message,
@@ -219,14 +237,24 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                     }
                 }
                 SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
+                    libp2p::mdns::MdnsEvent::Expired(list),
+                )) => {
+                    let local = Utc::now();
+
+                    for (peer, _) in list {
+                        println!("MDNS for peer {} expired {:?}", peer, local);
+                    }
+                }
+                SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
                     libp2p::mdns::MdnsEvent::Discovered(list),
                 )) => {
+                    let local = Utc::now();
                     for (peer, _) in list {
                         self.swarm
                             .behaviour_mut()
                             .gossipsub
                             .add_explicit_peer(&peer);
-                        println!("Discovered peer {}", peer);
+                        println!("Discovered peer {} {:?}", peer, local);
                     }
                 }
                 _ => {}
@@ -235,7 +263,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     }
 
     pub async fn new(house_uuid: &str, is_persistent_cache: bool, storage: T) -> Self {
-        let mut swarm = crate::domolibp2p::start().await.unwrap();
+        let swarm = crate::domolibp2p::start().await.unwrap();
+
+        let peer_id = swarm.local_peer_id().to_string();
 
         let mut c = DomoCache {
             house_uuid: house_uuid.to_owned(),
@@ -243,6 +273,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             storage: storage,
             cache: HashMap::new(),
             swarm: swarm,
+            local_peer_id: peer_id,
         };
 
         // popolo la mia cache con il contenuto dello sqlite
@@ -255,7 +286,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         c
     }
 
-    pub fn gossip_pub(&mut self, topic_name: &str, topic_uuid: &str, m: DomoCacheElement) {
+    pub fn gossip_pub(&mut self, m: DomoCacheElement) {
         let topic = Topic::new("domo-data");
 
         let m = serde_json::to_string(&m).unwrap();
@@ -311,10 +342,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         }
 
         if publish {
-            let topic_name = cache_element.topic_name.clone();
-            let topic_uuid = cache_element.topic_uuid.clone();
-
-            self.gossip_pub(&topic_name, &topic_uuid, cache_element);
+            self.gossip_pub(cache_element);
         }
     }
 
@@ -343,6 +371,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
             publication_timestamp: timest,
             value: value.clone(),
             deleted: false,
+            publisher_peer_id: self.local_peer_id.clone(),
         };
 
         self.insert_cache_element(elem.clone(), self.is_persistent_cache, true);
@@ -375,14 +404,13 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
 
 mod tests {
     use super::DomoCacheOperations;
-    use crate::domolibp2p::DomoBehaviour;
 
     #[cfg(test)]
-    #[test]
-    fn test_write_and_read_key() {
+    #[async_std::test]
+    async fn test_write_and_read_key() {
         let house_uuid = "CasaProva";
         let storage = super::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
-        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage);
+        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage).await;
 
         domo_cache.print();
 
@@ -399,12 +427,12 @@ mod tests {
         assert_eq!(serde_json::json!({ "connected": true}), val)
     }
 
-    #[test]
-    fn test_write_twice_same_key() {
+    #[async_std::test]
+    async fn test_write_twice_same_key() {
         let house_uuid = "CasaProva";
         let storage = super::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
 
-        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage);
+        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage).await;
 
         domo_cache.write_value(
             "Domo::Light",
@@ -433,12 +461,12 @@ mod tests {
         assert_eq!(serde_json::json!({ "connected": false}), val)
     }
 
-    #[test]
-    fn test_write_old_timestamp() {
+    #[async_std::test]
+    async fn test_write_old_timestamp() {
         let house_uuid = "CasaProva";
         let storage = super::SqliteStorage::new(house_uuid, "./prova.sqlite", true);
 
-        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage);
+        let mut domo_cache = super::DomoCache::new(house_uuid, true, storage).await;
 
         domo_cache.write_value(
             "Domo::Light",
@@ -456,6 +484,7 @@ mod tests {
             value: Default::default(),
             deleted: false,
             publication_timestamp: 0,
+            publisher_peer_id: domo_cache.local_peer_id.clone(),
         };
 
         // mi aspetto il vecchio valore perchè non deve fare la scrittura
