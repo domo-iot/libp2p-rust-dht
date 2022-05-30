@@ -13,13 +13,16 @@ use domocache::DomoCacheOperations;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    println!("Usage: ./domo-libp2p <sqlite_file_path>");
+    let args: Vec<String> = env::args().collect();
+
+    if args.len() < 2 {
+        println!("Usage: ./domo-libp2p <sqlite_file_path>");
+        return Ok(());
+    }
 
     let local = Utc::now();
 
     println!("Program started at {:?}", local);
-
-    let args: Vec<String> = env::args().collect();
 
     let sqlite_file = &args[1];
 
@@ -78,7 +81,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         }
                     },
                     _ => {
-                        println!("expected PUB <topic_name> <topic_uuid> <value>");
+                        println!("Commands:");
+                        println!("HASH");
+                        println!("PRINT");
+                        println!("PEERS");
+                        println!("PUB <topic_name> <topic_uuid> <value>");
                     }
                 }
 
