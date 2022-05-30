@@ -246,7 +246,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let fil: Vec<u64> = self
             .peers_caches_state
             .iter()
-            .filter(|(peer_id, data)| data.publication_timestamp > (get_epoch_ms() - (1000 * 60)))
+            .filter(|(peer_id, data)| data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
             .filter(|(peer_id, data)| (data.cache_hash != local_hash))
             .map(|(peer_id, data)| data.cache_hash)
             .collect();
