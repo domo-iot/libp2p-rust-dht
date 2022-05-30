@@ -1,5 +1,7 @@
+use async_std::task;
 use chrono::prelude::*;
 use futures::prelude::*;
+use futures::{prelude::*, select};
 use itertools::Itertools;
 use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::swarm::SwarmEvent;
@@ -11,6 +13,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub fn get_epoch_ms() -> u128 {
@@ -162,7 +165,6 @@ pub trait DomoCacheOperations {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
-
 pub struct DomoCacheElement {
     pub topic_name: String,
     pub topic_uuid: String,
@@ -170,6 +172,13 @@ pub struct DomoCacheElement {
     pub deleted: bool,
     pub publication_timestamp: u128,
     pub publisher_peer_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct DomoCacheStateMessage {
+    pub peer_id: String,
+    pub cache_hash: u64,
+    pub publication_timestamp: u128,
 }
 
 impl Display for DomoCacheElement {
@@ -192,6 +201,7 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub is_persistent_cache: bool,
     pub storage: T,
     pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
+    pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub local_peer_id: String,
 }
@@ -210,85 +220,141 @@ impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {
+    fn handle_message_data(
+        &mut self,
+        message: &str,
+    ) -> std::result::Result<DomoCacheElement, Box<dyn Error>> {
+        let m: DomoCacheElement = serde_json::from_str(message)?;
+
+        let topic_name = m.topic_name.clone();
+        let topic_uuid = m.topic_uuid.clone();
+
+        match self.write_with_timestamp_check(&topic_name, &topic_uuid, m.clone()) {
+            None => {
+                println!("New message received");
+                return Ok(m);
+            }
+            _ => {
+                println!("Old message received");
+                return Ok(m);
+            }
+        }
+    }
+
+    fn handle_config_data(&mut self, message: &str) {
+        let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
+        self.peers_caches_state.insert(m.peer_id.clone(), m);
+    }
+
+    fn send_cache_state(&mut self) {
+        let m = DomoCacheStateMessage {
+            peer_id: self.local_peer_id.to_string(),
+            cache_hash: self.get_cache_hash(),
+            publication_timestamp: get_epoch_ms(),
+        };
+
+        let topic = Topic::new("domo-config");
+
+        let m = serde_json::to_string(&m).unwrap();
+
+        if let Err(e) = self
+            .swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic.clone(), m.as_bytes())
+        {
+            println!("Publish error: {:?}", e);
+        } else {
+            println!("Publishing message");
+        }
+    }
+
+    pub fn print_peers_cache(&self) {
+        for (peer_id, peer_data) in self.peers_caches_state.iter() {
+            println!(
+                "Peer {} {} {}",
+                peer_id, peer_data.cache_hash, peer_data.publication_timestamp
+            );
+        }
+    }
+
     pub async fn wait_for_messages(
         &mut self,
     ) -> std::result::Result<DomoCacheElement, Box<dyn Error>> {
         loop {
-            let event = self.swarm.select_next_some().await;
-            match event {
-                SwarmEvent::ExpiredListenAddr { address, .. } => {
-                    println!("Address {:?} expired", address);
-                }
-                SwarmEvent::ConnectionClosed { .. } => {
-                    println!("Connection closed");
-                }
-                SwarmEvent::ListenerError { .. } => {
-                    println!("Listener Error");
-                }
-                SwarmEvent::OutgoingConnectionError { .. } => {
-                    println!("Outgoing connection error");
-                }
-                SwarmEvent::ListenerClosed { .. } => {
-                    println!("Listener Closed");
-                }
+            select!(
+                timer = task::sleep(Duration::from_secs(10)).fuse() => {
+                            println!("Periodic cache state exchange");
+                            self.send_cache_state();
+                },
+                event = self.swarm.select_next_some() => {
+                match event {
+                    SwarmEvent::ExpiredListenAddr { address, .. } => {
+                        println!("Address {:?} expired", address);
+                    }
+                    SwarmEvent::ConnectionClosed { .. } => {
+                        println!("Connection closed");
+                    }
+                    SwarmEvent::ListenerError { .. } => {
+                        println!("Listener Error");
+                    }
+                    SwarmEvent::OutgoingConnectionError { .. } => {
+                        println!("Outgoing connection error");
+                    }
+                    SwarmEvent::ListenerClosed { .. } => {
+                        println!("Listener Closed");
+                    }
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        println!("Listening in {:?}", address);
+                    }
+                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
+                        libp2p::gossipsub::GossipsubEvent::Message {
+                            propagation_source: peer_id,
+                            message_id: id,
+                            message,
+                        },
+                    )) => {
+                        println!(
+                            "Got message: {} with id: {} from peer: {:?}, topic {}",
+                            String::from_utf8_lossy(&message.data),
+                            id,
+                            peer_id,
+                            &message.topic
+                        );
 
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    println!("Listening in {:?}", address);
-                }
-                SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
-                    libp2p::gossipsub::GossipsubEvent::Message {
-                        propagation_source: peer_id,
-                        message_id: id,
-                        message,
-                    },
-                )) => {
-                    println!(
-                        "Got message: {} with id: {} from peer: {:?}, topic {}",
-                        String::from_utf8_lossy(&message.data),
-                        id,
-                        peer_id,
-                        &message.topic
-                    );
+                        if message.topic.to_string() == "domo-data" {
+                            return self.handle_message_data(&String::from_utf8_lossy(&message.data));
+                        } else if message.topic.to_string() == "domo-config" {
+                            self.handle_config_data(&String::from_utf8_lossy(&message.data));
+                        } else {
+                                println!("Not able to recognize message");
+                            }
+                    }
+                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
+                        libp2p::mdns::MdnsEvent::Expired(list),
+                    )) => {
+                        let local = Utc::now();
 
-                    let m: DomoCacheElement =
-                        serde_json::from_str(&String::from_utf8_lossy(&message.data))?;
-
-                    let topic_name = m.topic_name.clone();
-                    let topic_uuid = m.topic_uuid.clone();
-
-                    match self.write_with_timestamp_check(&topic_name, &topic_uuid, m.clone()) {
-                        None => {
-                            println!("New message received");
-                            return Ok(m);
+                        for (peer, _) in list {
+                            println!("MDNS for peer {} expired {:?}", peer, local);
                         }
-                        _ => {
-                            println!("Old message received");
+                    }
+                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
+                        libp2p::mdns::MdnsEvent::Discovered(list),
+                    )) => {
+                        let local = Utc::now();
+                        for (peer, _) in list {
+                            self.swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .add_explicit_peer(&peer);
+                            println!("Discovered peer {} {:?}", peer, local);
                         }
                     }
-                }
-                SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
-                    libp2p::mdns::MdnsEvent::Expired(list),
-                )) => {
-                    let local = Utc::now();
-
-                    for (peer, _) in list {
-                        println!("MDNS for peer {} expired {:?}", peer, local);
+                    _ => {}
                     }
                 }
-                SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
-                    libp2p::mdns::MdnsEvent::Discovered(list),
-                )) => {
-                    let local = Utc::now();
-                    for (peer, _) in list {
-                        self.swarm
-                            .behaviour_mut()
-                            .gossipsub
-                            .add_explicit_peer(&peer);
-                        println!("Discovered peer {} {:?}", peer, local);
-                    }
-                }
-                _ => {}
-            }
+            );
         }
     }
 
@@ -302,6 +368,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             is_persistent_cache: is_persistent_cache,
             storage: storage,
             cache: BTreeMap::new(),
+            peers_caches_state: BTreeMap::new(),
             swarm: swarm,
             local_peer_id: peer_id,
         };
@@ -343,11 +410,13 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    pub fn get_cache_hash(&self) {
+    pub fn print_cache_hash(&self) {
+        println!("Hash {}", self.get_cache_hash())
+    }
+    pub fn get_cache_hash(&self) -> u64 {
         let mut s = DefaultHasher::new();
         self.hash(&mut s);
-        let h = s.finish();
-        println!("Cache hash: {}", h);
+        s.finish()
     }
 }
 

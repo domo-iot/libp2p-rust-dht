@@ -52,13 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     }
                     Some("PEERS") => {
                         println!("Peers:");
-                        for (peer, _) in domo_cache
-                            .swarm
-                            .behaviour_mut()
-                            .gossipsub.all_peers() {
-
-                            println!("{:?}", peer.to_string());
-                        }
+                        domo_cache.print_peers_cache()
 
                     }
                     Some("PUB") => {
