@@ -241,9 +241,29 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
+    fn is_syncrhonized(&self, peer_map: &BTreeMap<String, DomoCacheStateMessage>) -> bool {
+        let local_hash = self.get_cache_hash();
+        let fil: Vec<u64> = self
+            .peers_caches_state
+            .iter()
+            .filter(|(peer_id, data)| (data.cache_hash != local_hash))
+            .map(|(peer_id, data)| data.cache_hash)
+            .collect();
+
+        // se ci sono hashes diversi dal mio non è consistente
+        if fil.len() > 0 {
+            return false;
+        }
+        true
+    }
+
     fn handle_config_data(&mut self, message: &str) {
         let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
         self.peers_caches_state.insert(m.peer_id.clone(), m);
+
+        if !self.is_syncrhonized(&self.peers_caches_state) {
+            println!("Caches are not synchronized");
+        }
     }
 
     fn send_cache_state(&mut self) {
