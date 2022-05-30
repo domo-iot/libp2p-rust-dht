@@ -246,6 +246,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let fil: Vec<u64> = self
             .peers_caches_state
             .iter()
+            .filter(|(peer_id, data)| data.publication_timestamp > (get_epoch_ms() - (1000 * 60)))
             .filter(|(peer_id, data)| (data.cache_hash != local_hash))
             .map(|(peer_id, data)| data.cache_hash)
             .collect();
@@ -257,12 +258,26 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         true
     }
 
+    fn publish_cache(&mut self) {
+        let mut cache_elements = vec![];
+        for (topic_name, topic_name_map) in self.cache.iter() {
+            for (topic_uuid, cache_element) in topic_name_map.iter() {
+                cache_elements.push(cache_element.clone());
+            }
+        }
+
+        for elem in cache_elements {
+            self.gossip_pub(elem);
+        }
+    }
+
     fn handle_config_data(&mut self, message: &str) {
         let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
         self.peers_caches_state.insert(m.peer_id.clone(), m);
 
         if !self.is_syncrhonized(&self.peers_caches_state) {
             println!("Caches are not synchronized");
+            self.publish_cache();
         }
     }
 

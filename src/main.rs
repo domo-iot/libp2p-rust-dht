@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 match args.next(){
                     Some("HASH") => {
-                        domo_cache.get_cache_hash();
+                        domo_cache.print_cache_hash();
                     }
                     Some("PRINT") => {
                         domo_cache.print()
