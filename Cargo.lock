@@ -641,7 +641,6 @@ dependencies = [
  "chrono",
  "env_logger",
  "futures",
- "itertools",
  "libp2p",
  "rusqlite",
  "serde",

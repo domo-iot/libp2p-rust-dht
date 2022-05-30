@@ -1,8 +1,7 @@
 use async_std::task;
 use chrono::prelude::*;
 use futures::prelude::*;
-use futures::{prelude::*, select};
-use itertools::Itertools;
+use futures::select;
 use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::swarm::SwarmEvent;
 use rusqlite::{params, Connection, OpenFlags};
@@ -241,14 +240,14 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    fn is_syncrhonized(&self, peer_map: &BTreeMap<String, DomoCacheStateMessage>) -> bool {
+    fn is_syncrhonized(&self) -> bool {
         let local_hash = self.get_cache_hash();
         let fil: Vec<u64> = self
             .peers_caches_state
             .iter()
-            .filter(|(peer_id, data)| data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
-            .filter(|(peer_id, data)| (data.cache_hash != local_hash))
-            .map(|(peer_id, data)| data.cache_hash)
+            .filter(|(_, data)| data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
+            .filter(|(_, data)| (data.cache_hash != local_hash))
+            .map(|(_, data)| data.cache_hash)
             .collect();
 
         // se ci sono hashes diversi dal mio non è consistente
@@ -260,8 +259,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
     fn publish_cache(&mut self) {
         let mut cache_elements = vec![];
-        for (topic_name, topic_name_map) in self.cache.iter() {
-            for (topic_uuid, cache_element) in topic_name_map.iter() {
+        for (_, topic_name_map) in self.cache.iter() {
+            for (_, cache_element) in topic_name_map.iter() {
                 cache_elements.push(cache_element.clone());
             }
         }
@@ -275,7 +274,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
         self.peers_caches_state.insert(m.peer_id.clone(), m);
 
-        if !self.is_syncrhonized(&self.peers_caches_state) {
+        if !self.is_syncrhonized() {
             println!("Caches are not synchronized");
             self.publish_cache();
         }
@@ -300,7 +299,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         {
             println!("Publish error: {:?}", e);
         } else {
-            println!("Publishing message");
+            println!("Published cache");
         }
     }
 
@@ -318,7 +317,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     ) -> std::result::Result<DomoCacheElement, Box<dyn Error>> {
         loop {
             select!(
-                timer = task::sleep(Duration::from_secs(10)).fuse() => {
+                _ = task::sleep(Duration::from_secs(10)).fuse() => {
                             println!("Periodic cache state exchange");
                             self.send_cache_state();
                 },
@@ -439,7 +438,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         for (topic_name, topic_name_map) in self.cache.iter() {
             println!(" TopicName {} ", topic_name);
 
-            for (topic_uuid, value) in topic_name_map.iter() {
+            for (_, value) in topic_name_map.iter() {
                 println!("{}", value);
             }
         }
