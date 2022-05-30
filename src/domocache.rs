@@ -1,15 +1,17 @@
-use futures::prelude::*;
-
 use chrono::prelude::*;
+use futures::prelude::*;
+use itertools::Itertools;
+use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::swarm::SwarmEvent;
 use rusqlite::{params, Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::BTreeMap;
 use std::error::Error;
+use std::fmt::{Display, Formatter};
+use std::hash::{Hash, Hasher};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-use libp2p::gossipsub::IdentTopic as Topic;
 
 pub fn get_epoch_ms() -> u128 {
     SystemTime::now()
@@ -170,13 +172,41 @@ pub struct DomoCacheElement {
     pub publisher_peer_id: String,
 }
 
+impl Display for DomoCacheElement {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "({}, {}, {}, {}, {}, {})",
+            self.topic_name,
+            self.topic_uuid,
+            self.value.to_string(),
+            self.deleted,
+            self.publication_timestamp,
+            self.publisher_peer_id
+        )
+    }
+}
+
 pub struct DomoCache<T: DomoPersistentStorage> {
     pub house_uuid: String,
     pub is_persistent_cache: bool,
     pub storage: T,
-    pub cache: HashMap<String, HashMap<String, DomoCacheElement>>,
+    pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub local_peer_id: String,
+}
+
+impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for (topic_name, map_topic_name) in self.cache.iter() {
+            topic_name.hash(state);
+
+            for (topic_uuid, value) in map_topic_name.iter() {
+                topic_uuid.hash(state);
+                value.to_string().hash(state);
+            }
+        }
+    }
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {
@@ -271,7 +301,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             house_uuid: house_uuid.to_owned(),
             is_persistent_cache: is_persistent_cache,
             storage: storage,
-            cache: HashMap::new(),
+            cache: BTreeMap::new(),
             swarm: swarm,
             local_peer_id: peer_id,
         };
@@ -308,9 +338,16 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             println!(" TopicName {} ", topic_name);
 
             for (topic_uuid, value) in topic_name_map.iter() {
-                println!("{:?}", value);
+                println!("{}", value);
             }
         }
+    }
+
+    pub fn get_cache_hash(&self) {
+        let mut s = DefaultHasher::new();
+        self.hash(&mut s);
+        let h = s.finish();
+        println!("Cache hash: {}", h);
     }
 }
 
@@ -330,7 +367,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         } else {
             // first time that we add an element of topic_name type
             self.cache
-                .insert(cache_element.topic_name.clone(), HashMap::new());
+                .insert(cache_element.topic_name.clone(), BTreeMap::new());
             self.cache
                 .get_mut(&cache_element.topic_name)
                 .unwrap()
