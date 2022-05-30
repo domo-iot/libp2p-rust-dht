@@ -44,6 +44,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 let mut args = line.split(" ");
 
                 match args.next(){
+                    Some("HASH") => {
+                        domo_cache.get_cache_hash();
+                    }
                     Some("PRINT") => {
                         domo_cache.print()
                     }
