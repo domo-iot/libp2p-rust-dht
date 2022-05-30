@@ -28,7 +28,8 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     let local_peer_id = PeerId::from(local_key.public());
 
     // Create a Gossipsub topic
-    let topic = Topic::new("domo-data");
+    let topic_data = Topic::new("domo-data");
+    let topic_config = Topic::new("domo-config");
 
     // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
     let transport = development_transport(local_key.clone()).await?;
@@ -65,8 +66,11 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
             gossipsub::Gossipsub::new(MessageAuthenticity::Signed(local_key), gossipsub_config)
                 .expect("Correct configuration");
 
-        // subscribes to our topic
-        gossipsub.subscribe(&topic).unwrap();
+        // subscribes to data topic
+        gossipsub.subscribe(&topic_data).unwrap();
+
+        // subscribes to config topic
+        gossipsub.subscribe(&topic_config).unwrap();
 
         let behaviour = DomoBehaviour { mdns, gossipsub };
         Swarm::new(transport, behaviour, local_peer_id)
