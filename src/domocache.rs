@@ -229,7 +229,10 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         &mut self,
         message: &str,
     ) -> std::result::Result<DomoCacheElement, Box<dyn Error>> {
-        let m: DomoCacheElement = serde_json::from_str(message)?;
+        let mut m: DomoCacheElement = serde_json::from_str(message)?;
+
+        // rimetto a 0 il republication timestamp altrimenti cambia hash
+        m.republication_timestamp = 0;
 
         let topic_name = m.topic_name.clone();
         let topic_uuid = m.topic_uuid.clone();
