@@ -297,8 +297,26 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     }
 
     fn handle_config_data(&mut self, message: &str) {
+        println!("Received cache message");
         let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
-        self.peers_caches_state.insert(m.peer_id.clone(), m);
+        match self.peers_caches_state.get(&m.peer_id) {
+            None => {
+                self.peers_caches_state.insert(m.peer_id.clone(), m);
+                self.check_caches_desynchronization();
+            }
+            Some(elem) => {
+                let mut to_check = false;
+                if elem.cache_hash != m.cache_hash {
+                    to_check = true;
+                }
+                self.peers_caches_state.insert(m.peer_id.clone(), m);
+
+                if to_check {
+                    self.check_caches_desynchronization();
+                }
+
+            }
+        }
 
 
     }
@@ -340,11 +358,10 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             println!("Published cache state");
         }
 
-        // verifico se devo fare il controllo di cache desync
-        self.publish_cache_counter -= 1;
+        self.publish_cache_counter-=1;
         if self.publish_cache_counter == 0 {
-            self.check_caches_desynchronization();
             self.publish_cache_counter = 2;
+            self.check_caches_desynchronization();
         }
 
     }
@@ -433,6 +450,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                                 .add_explicit_peer(&peer);
                             println!("Discovered peer {} {:?}", peer, local);
                         }
+                        task::sleep(Duration::from_millis(300)).await; self.send_cache_state();
                     }
                     _ => {}
                     }
