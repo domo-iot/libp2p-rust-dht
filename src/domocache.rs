@@ -15,6 +15,8 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
+use log::{debug, error, log_enabled, info, Level};
+
 
 pub fn get_epoch_ms() -> u128 {
     SystemTime::now()
@@ -120,6 +122,7 @@ impl DomoPersistentStorage for SqliteStorage {
                     deleted: row.get(3)?,
                     publication_timestamp: pub_timestamp_string.parse().unwrap(),
                     publisher_peer_id: row.get(5)?,
+                    republication_timestamp: 0
                 })
             })
             .unwrap();
@@ -172,6 +175,7 @@ pub struct DomoCacheElement {
     pub deleted: bool,
     pub publication_timestamp: u128,
     pub publisher_peer_id: String,
+    pub republication_timestamp: u128
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
@@ -232,11 +236,11 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
         match self.write_with_timestamp_check(&topic_name, &topic_uuid, m.clone()) {
             None => {
-                println!("New message received");
+                log::info!("New message received");
                 return Ok(m);
             }
             _ => {
-                println!("Old message received");
+                log::info!("Old message received");
                 return Ok(m);
             }
         }
@@ -292,46 +296,27 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
 
         for elem in cache_elements {
-            self.gossip_pub(elem);
+            self.gossip_pub(elem, true);
         }
     }
 
     fn handle_config_data(&mut self, message: &str) {
-        println!("Received cache message");
+        log::info!("Received cache message, check caches ...");
         let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
-        match self.peers_caches_state.get(&m.peer_id) {
-            None => {
-                self.peers_caches_state.insert(m.peer_id.clone(), m);
-                self.check_caches_desynchronization();
-            }
-            Some(elem) => {
-                let mut to_check = false;
-                if elem.cache_hash != m.cache_hash {
-                    to_check = true;
-                }
-                self.peers_caches_state.insert(m.peer_id.clone(), m);
-
-                if to_check {
-                    self.check_caches_desynchronization();
-                }
-
-            }
-        }
-
-
+        self.peers_caches_state.insert(m.peer_id.clone(), m);
+        self.check_caches_desynchronization();
     }
 
     fn check_caches_desynchronization(&mut self) {
-        println!("Checking caches ...");
         let (sync, leader) = self.is_synchronized();
         if !sync {
-            println!("Caches are not synchronized");
+            log::info!("Caches are not synchronized");
             if leader {
-                println!("Publishing my cache since I am the leader for the hash");
+                log::info!("Publishing my cache since I am the leader for the hash");
                 self.publish_cache();
             }
         } else {
-            println!("Caches are synchronized");
+            log::info!("Caches are synchronized");
         }
 
     }
@@ -353,14 +338,14 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             .gossipsub
             .publish(topic.clone(), m.as_bytes())
         {
-            println!("Publish error: {:?}", e);
+            log::info!("Publish error: {:?}", e);
         } else {
-            println!("Published cache state");
+            log::info!("Published cache state");
         }
 
         self.publish_cache_counter-=1;
         if self.publish_cache_counter == 0 {
-            self.publish_cache_counter = 2;
+            self.publish_cache_counter = 4;
             self.check_caches_desynchronization();
         }
 
@@ -382,26 +367,30 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         loop {
             select!(
                 // sending cache state periodically
-                _ = task::sleep(Duration::from_secs(10)).fuse() => {
+                _ = task::sleep(Duration::from_secs(5)).fuse() => {
                             self.send_cache_state();
                 },
 
                 event = self.swarm.select_next_some() => {
                 match event {
+
                     SwarmEvent::ExpiredListenAddr { address, .. } => {
-                        println!("Address {:?} expired", address);
+                        log::info!("Address {:?} expired", address);
+                    }
+                    SwarmEvent::ConnectionEstablished {..} => {
+                            log::info!("Connection established ...");
                     }
                     SwarmEvent::ConnectionClosed { .. } => {
-                        println!("Connection closed");
+                        log::info!("Connection closed");
                     }
                     SwarmEvent::ListenerError { .. } => {
-                        println!("Listener Error");
+                        log::info!("Listener Error");
                     }
                     SwarmEvent::OutgoingConnectionError { .. } => {
-                        println!("Outgoing connection error");
+                        log::info!("Outgoing connection error");
                     }
                     SwarmEvent::ListenerClosed { .. } => {
-                        println!("Listener Closed");
+                        log::info!("Listener Closed");
                     }
                     SwarmEvent::NewListenAddr { address, .. } => {
                         println!("Listening in {:?}", address);
@@ -427,7 +416,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         } else if message.topic.to_string() == "domo-config" {
                             self.handle_config_data(&String::from_utf8_lossy(&message.data));
                         } else {
-                                println!("Not able to recognize message");
+                                log::info!("Not able to recognize message");
                             }
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
@@ -436,7 +425,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         let local = Utc::now();
 
                         for (peer, _) in list {
-                            println!("MDNS for peer {} expired {:?}", peer, local);
+                            log::info!("MDNS for peer {} expired {:?}", peer, local);
                         }
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
@@ -448,9 +437,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                                 .behaviour_mut()
                                 .gossipsub
                                 .add_explicit_peer(&peer);
-                            println!("Discovered peer {} {:?}", peer, local);
+                            log::info!("Discovered peer {} {:?}", peer, local);
                         }
-                        task::sleep(Duration::from_millis(300)).await; self.send_cache_state();
+
                     }
                     _ => {}
                     }
@@ -472,7 +461,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             peers_caches_state: BTreeMap::new(),
             swarm: swarm,
             local_peer_id: peer_id,
-            publish_cache_counter: 2
+            publish_cache_counter: 4
         };
 
         // popolo la mia cache con il contenuto dello sqlite
@@ -485,8 +474,14 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         c
     }
 
-    pub fn gossip_pub(&mut self, m: DomoCacheElement) {
+    pub fn gossip_pub(&mut self, mut m: DomoCacheElement, republished: bool) {
         let topic = Topic::new("domo-data");
+
+        if republished {
+            m.republication_timestamp = get_epoch_ms();
+        } else {
+            m.republication_timestamp = 0;
+        }
 
         let m = serde_json::to_string(&m).unwrap();
 
@@ -496,7 +491,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             .gossipsub
             .publish(topic.clone(), m.as_bytes())
         {
-            println!("Publish error: {:?}", e);
+            log::info!("Publish error: {:?}", e);
         }
     }
 
@@ -548,7 +543,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         }
 
         if publish {
-            self.gossip_pub(cache_element);
+            self.gossip_pub(cache_element, false);
         }
     }
 
@@ -578,6 +573,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
             value: value.clone(),
             deleted: false,
             publisher_peer_id: self.local_peer_id.clone(),
+            republication_timestamp: 0
         };
 
         self.insert_cache_element(elem.clone(), self.is_persistent_cache, true);

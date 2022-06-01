@@ -11,6 +11,8 @@ use std::{env, time};
 use chrono::prelude::*;
 use domocache::DomoCacheOperations;
 
+use log::{debug, error, log_enabled, info, Level};
+
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -22,7 +24,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let local = Utc::now();
 
-    println!("Program started at {:?}", local);
+    log::info!("Program started at {:?}", local);
 
     let sqlite_file = &args[1];
 
@@ -40,7 +42,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         select! {
             ret = domo_cache.wait_for_messages().fuse() => {
-                println!("Application got message ...");
+                log::info!("Application got message ...");
             },
             line = stdin.select_next_some() => {
                 let line = line.expect("Stdin error");
@@ -67,7 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         // se uno degli argomenti è vuoto
                         if topic_name == None || topic_uuid == None || value == None{
-                            println!("topic_name, topic_uuid, value are mandatory arguments");
+                            println!("topic_name, topic_uuid, values are mandatory arguments");
                         } else{
                             let topic_name= topic_name.unwrap();
                             let topic_uuid= topic_uuid.unwrap();
