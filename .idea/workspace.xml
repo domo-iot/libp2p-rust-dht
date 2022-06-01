@@ -17,10 +17,7 @@
   <component name="ChangeListManager">
     <list default="true" id="afea87ad-6cf1-40f2-abe6-76b0fbb2686f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.lock" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.lock" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Cargo.toml" beforeDir="false" afterPath="$PROJECT_DIR$/Cargo.toml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/domocache.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/domocache.rs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -94,7 +91,7 @@
       <option name="presentableId" value="Default" />
       <updated>1654071090654</updated>
       <workItem from="1654071093458" duration="8425000" />
-      <workItem from="1654089754665" duration="4825000" />
+      <workItem from="1654089754665" duration="6265000" />
     </task>
     <servers />
   </component>
