@@ -208,7 +208,8 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub local_peer_id: String,
-    pub publish_cache_counter: u8
+    pub publish_cache_counter: u8,
+    pub last_cache_repub_timestamp: u128
 }
 
 impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
@@ -266,6 +267,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         // se ci sono hashes diversi dal mio non è consistente
         // verifico se sono il leader per l'hash
         if fil.len() > 0 {
+
+
             let fil2: Vec<String> = self
                 .peers_caches_state
                 .iter()
@@ -301,6 +304,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         for elem in cache_elements {
             self.gossip_pub(elem, true);
         }
+
+        self.last_cache_repub_timestamp = get_epoch_ms();
     }
 
     fn handle_config_data(&mut self, message: &str) {
@@ -316,7 +321,11 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             log::info!("Caches are not synchronized");
             if leader {
                 log::info!("Publishing my cache since I am the leader for the hash");
-                self.publish_cache();
+                if self.last_cache_repub_timestamp < (get_epoch_ms()-1000*5) {
+                    self.publish_cache();
+                } else {
+                    log::info!("Skipping cache repub since it occurred not so much time ago");
+                }
             }
         } else {
             log::info!("Caches are synchronized");
@@ -464,7 +473,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             peers_caches_state: BTreeMap::new(),
             swarm: swarm,
             local_peer_id: peer_id,
-            publish_cache_counter: 4
+            publish_cache_counter: 4,
+            last_cache_repub_timestamp: 0
+
         };
 
         // popolo la mia cache con il contenuto dello sqlite
