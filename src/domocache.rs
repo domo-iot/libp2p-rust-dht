@@ -7,6 +7,7 @@ use libp2p::swarm::SwarmEvent;
 use rusqlite::{params, Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -203,6 +204,7 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub local_peer_id: String,
+    pub publish_cache_counter: u8
 }
 
 impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
@@ -240,21 +242,45 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    fn is_syncrhonized(&self) -> bool {
+    // restituisce una tupla (is_synchronized, is_hash_leader)
+
+    fn is_synchronized(&self) -> (bool, bool) {
         let local_hash = self.get_cache_hash();
         let fil: Vec<u64> = self
             .peers_caches_state
             .iter()
-            .filter(|(_, data)| data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
-            .filter(|(_, data)| (data.cache_hash != local_hash))
+            .filter(|(_, data)| {
+                (data.cache_hash != local_hash)
+                    && (data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
+            })
             .map(|(_, data)| data.cache_hash)
             .collect();
 
         // se ci sono hashes diversi dal mio non è consistente
+        // verifico se sono il leader per l'hash
         if fil.len() > 0 {
-            return false;
+            let fil2: Vec<String> = self
+                .peers_caches_state
+                .iter()
+                .filter(|(peer_id, data)| {
+                    (data.cache_hash == local_hash)
+                        && (self.local_peer_id.cmp(peer_id) == Ordering::Less)
+                        && (data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
+                })
+                .map(|(peer_id, data)| String::from(peer_id))
+                .collect();
+
+            if fil2.len() > 0 {
+                // non sono il leader dello hash
+                return (false, false);
+            } else {
+                // sono il leader dello hash
+                return (false, true);
+            }
         }
-        true
+
+        // è sincronizzata
+        (true, true)
     }
 
     fn publish_cache(&mut self) {
@@ -274,10 +300,22 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
         self.peers_caches_state.insert(m.peer_id.clone(), m);
 
-        if !self.is_syncrhonized() {
+
+    }
+
+    fn check_caches_desynchronization(&mut self) {
+        println!("Checking caches ...");
+        let (sync, leader) = self.is_synchronized();
+        if !sync {
             println!("Caches are not synchronized");
-            self.publish_cache();
+            if leader {
+                println!("Publishing my cache since I am the leader for the hash");
+                self.publish_cache();
+            }
+        } else {
+            println!("Caches are synchronized");
         }
+
     }
 
     fn send_cache_state(&mut self) {
@@ -299,8 +337,16 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         {
             println!("Publish error: {:?}", e);
         } else {
-            println!("Published cache");
+            println!("Published cache state");
         }
+
+        // verifico se devo fare il controllo di cache desync
+        self.publish_cache_counter -= 1;
+        if self.publish_cache_counter == 0 {
+            self.check_caches_desynchronization();
+            self.publish_cache_counter = 2;
+        }
+
     }
 
     pub fn print_peers_cache(&self) {
@@ -315,12 +361,14 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     pub async fn wait_for_messages(
         &mut self,
     ) -> std::result::Result<DomoCacheElement, Box<dyn Error>> {
+
         loop {
             select!(
+                // sending cache state periodically
                 _ = task::sleep(Duration::from_secs(10)).fuse() => {
-                            println!("Periodic cache state exchange");
                             self.send_cache_state();
                 },
+
                 event = self.swarm.select_next_some() => {
                 match event {
                     SwarmEvent::ExpiredListenAddr { address, .. } => {
@@ -348,13 +396,14 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                             message,
                         },
                     )) => {
-                        println!(
+                        /* println!(
                             "Got message: {} with id: {} from peer: {:?}, topic {}",
                             String::from_utf8_lossy(&message.data),
                             id,
                             peer_id,
                             &message.topic
                         );
+                         */
 
                         if message.topic.to_string() == "domo-data" {
                             return self.handle_message_data(&String::from_utf8_lossy(&message.data));
@@ -405,6 +454,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             peers_caches_state: BTreeMap::new(),
             swarm: swarm,
             local_peer_id: peer_id,
+            publish_cache_counter: 2
         };
 
         // popolo la mia cache con il contenuto dello sqlite
@@ -429,8 +479,6 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             .publish(topic.clone(), m.as_bytes())
         {
             println!("Publish error: {:?}", e);
-        } else {
-            println!("Publishing message");
         }
     }
 
@@ -525,12 +573,11 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
     ) -> Option<DomoCacheElement> {
         match self.read_cache_element(topic_name, topic_uuid) {
             Some(value) => {
-                if value.publication_timestamp > elem.publication_timestamp {
-                    Some(value)
-                } else {
-                    // inserisco in cache ma non ripubblico
+                if elem.publication_timestamp > value.publication_timestamp {
                     self.insert_cache_element(elem, self.is_persistent_cache, false);
                     None
+                } else {
+                    Some(value)
                 }
             }
             None => {
