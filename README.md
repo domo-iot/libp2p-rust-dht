@@ -12,9 +12,15 @@ Commands:
 
 **PEERS**: prints the list of discovered peers
 
-**PUB <topic_name> <topic_uuid> <value>**: publishes a message and stores it in the local cache
+**PUT <topic_name> <topic_uuid> <value>**: publishes a message and stores it in the caches
 
-Example:
+**DEL <topic_name> <topic_uuid>**: deletes (topic_name, topic_uuid) 
 
-PUB Domo::Light first-light on
+**PUB <value>**: publishes a volatile message
+
+Examples:
+
+- PUT Domo::Light first-light on
+- DELETE Domo::Light first-light
+- PUB ciao
 
