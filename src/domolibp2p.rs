@@ -15,10 +15,9 @@ use std::hash::{Hash, Hasher};
 use libp2p::{
     development_transport, identity,
     mdns::{Mdns, MdnsConfig, MdnsEvent},
-    swarm::NetworkBehaviourEventProcess,
     NetworkBehaviour, PeerId, Swarm,
 };
-use serde_json::{json, Value};
+
 use std::error::Error;
 use std::time::Duration;
 

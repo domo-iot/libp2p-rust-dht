@@ -1,24 +1,22 @@
 mod domocache;
 mod domolibp2p;
 
-use async_std::{io, task};
+use async_std::{io};
 use futures::{prelude::*, select};
-use serde_json::{json, Value};
+use serde_json::{json};
 use std::error::Error;
-use std::time::Duration;
-use std::{env, time};
+use std::{env};
 
 use chrono::prelude::*;
 use domocache::DomoCacheOperations;
 
-use log::{debug, error, log_enabled, info, Level};
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
-    if args.len() < 2 {
-        println!("Usage: ./domo-libp2p <sqlite_file_path>");
+    if args.len() < 3 {
+        println!("Usage: ./domo-libp2p <sqlite_file_path> <persistent_cache>");
         return Ok(());
     }
 
@@ -28,20 +26,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let sqlite_file = &args[1];
 
+    let is_persistent_cache: bool = String::from(&args[2]).parse().unwrap();
+
     env_logger::init();
 
     let house_uuid = "CasaProva";
 
-    let storage = domocache::SqliteStorage::new(house_uuid, sqlite_file, true);
+    let storage = domocache::SqliteStorage::new(house_uuid, sqlite_file, is_persistent_cache);
 
-    let mut domo_cache = domocache::DomoCache::new(house_uuid, true, storage).await;
+    let mut domo_cache = domocache::DomoCache::new(house_uuid, is_persistent_cache, storage).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
     // idle loop
     loop {
         select! {
-            ret = domo_cache.wait_for_messages().fuse() => {
+            _ = domo_cache.cache_event_loop().fuse() => {
                 log::info!("Application got message ...");
             },
             line = stdin.select_next_some() => {
@@ -58,7 +58,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Some("PEERS") => {
                         println!("Peers:");
                         domo_cache.print_peers_cache()
-
                     }
                     Some("DEL") => {
                         let topic_name = args.next();

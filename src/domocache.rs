@@ -15,8 +15,9 @@ use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
-use log::{debug, error, log_enabled, info, Level};
 
+
+const SEND_CACHE_HASH_PERIOD: u8 = 5;
 
 pub fn get_epoch_ms() -> u128 {
     SystemTime::now()
@@ -194,7 +195,9 @@ impl Display for DomoCacheElement {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "({}, {}, {}, {}, {}, {})",
+            "(topic_name: {}, topic_uuid:{}, \
+            value: {}, deleted: {}, publication_timestamp: {},\
+            peer_id: {})",
             self.topic_name,
             self.topic_uuid,
             self.value.to_string(),
@@ -264,15 +267,14 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             .iter()
             .filter(|(_, data)| {
                 (data.cache_hash != local_hash)
-                    && (data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
+                    && (data.publication_timestamp > (get_epoch_ms() - (1000 * 2 * u128::from(SEND_CACHE_HASH_PERIOD))))
             })
             .map(|(_, data)| data.cache_hash)
             .collect();
 
-        // se ci sono hashes diversi dal mio non è consistente
+        // se ci sono hashes diversi dal mio non è consistentecaches
         // verifico se sono il leader per l'hash
         if fil.len() > 0 {
-
 
             let fil2: Vec<String> = self
                 .peers_caches_state
@@ -280,9 +282,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 .filter(|(peer_id, data)| {
                     (data.cache_hash == local_hash)
                         && (self.local_peer_id.cmp(peer_id) == Ordering::Less)
-                        && (data.publication_timestamp > (get_epoch_ms() - (1000 * 20)))
+                        && (data.publication_timestamp > (get_epoch_ms() - (1000 * 2 * u128::from(SEND_CACHE_HASH_PERIOD))))
                 })
-                .map(|(peer_id, data)| String::from(peer_id))
+                .map(|(peer_id, _data)| String::from(peer_id))
                 .collect();
 
             if fil2.len() > 0 {
@@ -331,6 +333,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 } else {
                     log::info!("Skipping cache repub since it occurred not so much time ago");
                 }
+            } else {
+                log::info!("I am not the leader for the hash");
             }
         } else {
             log::info!("Caches are synchronized");
@@ -371,20 +375,20 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     pub fn print_peers_cache(&self) {
         for (peer_id, peer_data) in self.peers_caches_state.iter() {
             println!(
-                "Peer {} {} {}",
+                "Peer {}, HASH: {}, TIMESTAMP: {}",
                 peer_id, peer_data.cache_hash, peer_data.publication_timestamp
             );
         }
     }
 
-    pub async fn wait_for_messages(
+    pub async fn cache_event_loop(
         &mut self,
     ) -> std::result::Result<DomoCacheElement, Box<dyn Error>> {
 
         loop {
             select!(
                 // sending cache state periodically
-                _ = task::sleep(Duration::from_secs(5)).fuse() => {
+                _ = task::sleep(Duration::from_secs(u64::from(SEND_CACHE_HASH_PERIOD))).fuse() => {
                             self.send_cache_state();
                 },
 
@@ -414,8 +418,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
                         libp2p::gossipsub::GossipsubEvent::Message {
-                            propagation_source: peer_id,
-                            message_id: id,
+                            propagation_source: _peer_id,
+                            message_id: _id,
                             message,
                         },
                     )) => {

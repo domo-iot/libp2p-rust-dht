@@ -18,6 +18,7 @@
     <list default="true" id="afea87ad-6cf1-40f2-abe6-76b0fbb2686f" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/domocache.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/domocache.rs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/domolibp2p.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/domolibp2p.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/main.rs" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -60,7 +61,7 @@
 }</component>
   <component name="RunManager" selected="Cargo.Run">
     <configuration name="Run" type="CargoCommandRunConfiguration" factoryName="Cargo Command" nameIsGenerated="true">
-      <option name="command" value="run -- $USER_HOME$/uno.sqlite" />
+      <option name="command" value="run -- $USER_HOME$/uno.sqlite true" />
       <option name="workingDirectory" value="file://$PROJECT_DIR$" />
       <option name="channel" value="DEFAULT" />
       <option name="requiredFeatures" value="true" />
@@ -115,7 +116,7 @@
       <workItem from="1654071093458" duration="8425000" />
       <workItem from="1654089754665" duration="6301000" />
       <workItem from="1654096178267" duration="1377000" />
-      <workItem from="1654236055812" duration="1845000" />
+      <workItem from="1654236055812" duration="4018000" />
     </task>
     <servers />
   </component>
