@@ -1,5 +1,7 @@
 mod domocache;
 mod domolibp2p;
+mod utils;
+mod domopersistentstorage;
 
 use async_std::{io};
 use futures::{prelude::*, select};
@@ -10,6 +12,7 @@ use std::{env};
 use chrono::prelude::*;
 use domocache::DomoCacheOperations;
 
+use domopersistentstorage::SqliteStorage;
 
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -30,7 +33,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     env_logger::init();
 
-    let storage = domocache::SqliteStorage::new(sqlite_file, is_persistent_cache);
+    let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
     let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
@@ -99,7 +102,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         let value = args.next();
 
-                        // se uno degli argomenti è vuoto
                         if topic_name == None || topic_uuid == None || value == None{
                             println!("topic_name, topic_uuid, values are mandatory arguments");
                         } else{
