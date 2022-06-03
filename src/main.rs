@@ -31,8 +31,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let storage = domocache::SqliteStorage::new(sqlite_file, is_persistent_cache);
-
-    let mut domo_cache = domocache::DomoCache::new( is_persistent_cache, storage).await;
+    let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
