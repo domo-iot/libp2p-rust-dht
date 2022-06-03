@@ -573,7 +573,6 @@ mod tests {
     use crate::domocache::DomoCacheElement;
     use super::DomoCacheOperations;
 
-
     #[cfg(test)]
     #[async_std::test]
     async fn test_delete() {
