@@ -30,19 +30,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     env_logger::init();
 
-    let house_uuid = "CasaProva";
+    let storage = domocache::SqliteStorage::new(sqlite_file, is_persistent_cache);
 
-    let storage = domocache::SqliteStorage::new(house_uuid, sqlite_file, is_persistent_cache);
-
-    let mut domo_cache = domocache::DomoCache::new(house_uuid, is_persistent_cache, storage).await;
+    let mut domo_cache = domocache::DomoCache::new( is_persistent_cache, storage).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
     // idle loop
     loop {
         select! {
-            _ = domo_cache.cache_event_loop().fuse() => {
-                log::info!("Application got message ...");
+            m = domo_cache.cache_event_loop().fuse() => {
+                match m {
+                    Ok(domocache::DomoEvent::None) => { },
+                    Ok(domocache::DomoEvent::PersistentData(m)) => {
+                        println!("Persistent message received {} {}", m.topic_name, m.topic_uuid);
+                    },
+                    Ok(domocache::DomoEvent::VolatileData(m)) => {
+                        println!("Volatile message {}", m.to_string());
+                    }
+                    _ => {}
+                }
             },
             line = stdin.select_next_some() => {
                 let line = line.expect("Stdin error");
@@ -75,6 +82,18 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     }
                     Some("PUB") => {
+                        let value = args.next();
+
+                        if value == None {
+                            println!("value is mandatory");
+                        }
+
+                        let val = json!({ "payload": value});
+
+                        domo_cache.pub_value(val);
+
+                    }
+                    Some("PUT") => {
                         let topic_name = args.next();
 
                         let topic_uuid = args.next();
@@ -101,7 +120,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         println!("HASH");
                         println!("PRINT");
                         println!("PEERS");
-                        println!("PUB <topic_name> <topic_uuid> <value>");
+                        println!("PUB <value>");
+                        println!("PUT <topic_name> <topic_uuid> <value>");
+                        println!("DEL <topic_name> <topic_uuid>");
                     }
                 }
 
