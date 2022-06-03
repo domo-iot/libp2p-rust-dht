@@ -16,6 +16,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="afea87ad-6cf1-40f2-abe6-76b0fbb2686f" name="Changes" comment="">
+      <change afterPath="$PROJECT_DIR$/src/domopersistentstorage.rs" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/src/utils.rs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/prova.sqlite" beforeDir="false" afterPath="$PROJECT_DIR$/prova.sqlite" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/domocache.rs" beforeDir="false" afterPath="$PROJECT_DIR$/src/domocache.rs" afterDir="false" />
@@ -28,6 +30,13 @@
   </component>
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Rust File" />
+      </list>
+    </option>
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -116,11 +125,22 @@
       <workItem from="1654071093458" duration="8425000" />
       <workItem from="1654089754665" duration="6301000" />
       <workItem from="1654096178267" duration="1377000" />
-      <workItem from="1654236055812" duration="10657000" />
+      <workItem from="1654236055812" duration="14928000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="com.jetbrains.cidr.execution.debugger.OCBreakpointType">
+          <url>file://$PROJECT_DIR$/src/domocache.rs</url>
+          <line>590</line>
+          <option name="timeStamp" value="6" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>

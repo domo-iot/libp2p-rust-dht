@@ -1,0 +1,167 @@
+use rusqlite::{params, Connection, OpenFlags};
+
+use crate::domocache:: {DomoCacheElement};
+
+pub trait DomoPersistentStorage {
+    fn store(&mut self, element: &DomoCacheElement);
+    fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
+}
+
+pub struct SqliteStorage {
+    pub sqlite_file: String,
+    pub sqlite_connection: Connection,
+}
+
+impl SqliteStorage {
+    pub fn new(sqlite_file: &str, write_access: bool) -> Self {
+        let conn = if write_access == false {
+            match Connection::open_with_flags(sqlite_file,
+                                              OpenFlags::SQLITE_OPEN_READ_ONLY) {
+                Ok(conn) => conn,
+                _ => {
+                    panic!("Error while opening the sqlite DB");
+                }
+            }
+        } else {
+            let conn = match Connection::open(sqlite_file) {
+                Ok(conn) => conn,
+                _ => {
+                    panic!("Error while opening the sqlite DB");
+                }
+            };
+
+            let _ = conn
+                .execute(
+                    "CREATE TABLE IF NOT EXISTS domo_data (
+                  topic_name             TEXT,
+                  topic_uuid             TEXT,
+                  value                  TEXT,
+                  deleted                INTEGER,
+                  publication_timestamp   TEXT,
+                  publisher_peer_id       TEXT,
+                  PRIMARY KEY (topic_name, topic_uuid)
+                  )",
+                    [],
+                )
+                .unwrap();
+
+            conn
+        };
+
+        SqliteStorage {
+            sqlite_file: sqlite_file.to_owned(),
+            sqlite_connection: conn,
+        }
+    }
+}
+
+impl DomoPersistentStorage for SqliteStorage {
+    fn store(&mut self, element: &DomoCacheElement) {
+        let _ = match self.sqlite_connection.execute(
+            "INSERT OR REPLACE INTO domo_data\
+             (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                element.topic_name,
+                element.topic_uuid,
+                element.value.to_string(),
+                element.deleted,
+                element.publication_timestamp.to_string(),
+                element.publisher_peer_id
+            ],
+        ) {
+            Ok(ret) => ret,
+            _ => {
+                panic!("Error while executing write operation on sqlite")
+            }
+        };
+    }
+
+    fn get_all_elements(&mut self) -> Vec<DomoCacheElement> {
+        // read all not deleted elements
+        let mut stmt = self
+            .sqlite_connection
+            .prepare("SELECT * FROM domo_data")
+            .unwrap();
+
+        let values_iter = stmt
+            .query_map([], |row| {
+                let jvalue: String = row.get(2)?;
+                let jvalue = serde_json::from_str(&jvalue);
+
+                let pub_timestamp_string: String = row.get(4)?;
+
+                Ok(DomoCacheElement {
+                    topic_name: row.get(0)?,
+                    topic_uuid: row.get(1)?,
+                    value: jvalue.unwrap(),
+                    deleted: row.get(3)?,
+                    publication_timestamp: pub_timestamp_string.parse().unwrap(),
+                    publisher_peer_id: row.get(5)?,
+                    republication_timestamp: 0
+                })
+            })
+            .unwrap();
+
+        let mut ret = vec![];
+        for val in values_iter {
+            let v = val.unwrap();
+            ret.push(v);
+        }
+
+        ret
+    }
+}
+
+mod tests {
+    use crate::domocache::DomoCacheElement;
+    use crate::domopersistentstorage::DomoPersistentStorage;
+
+    #[cfg(test)]
+    #[test]
+    #[should_panic]
+    fn open_read_non_existent_file(){
+        let s = super::SqliteStorage::new("/tmp/aaskdjkasdka.sqlite", false);
+    }
+
+    #[test]
+    fn open_write_non_existent_file(){
+        let s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
+        assert_eq!(s.sqlite_file, "/tmp/nkasjkldjad.sqlite");
+    }
+
+    #[test]
+    fn test_initial_get_all_element(){
+        let mut s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
+        let v = s.get_all_elements();
+        assert_eq!(v.len(), 0);
+    }
+
+    #[test]
+    fn test_store(){
+
+        let mut s =
+            super::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
+
+        let m = DomoCacheElement{
+            topic_name: "a".to_string(),
+            topic_uuid: "a".to_string(),
+            value: Default::default(),
+            deleted: false,
+            publication_timestamp: 0,
+            publisher_peer_id: "a".to_string(),
+            republication_timestamp: 0
+        };
+
+        s.store(&m);
+
+        let v = s.get_all_elements();
+
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0], m);
+
+    }
+
+
+
+}
