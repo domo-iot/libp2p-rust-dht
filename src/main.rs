@@ -60,6 +60,21 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         domo_cache.print_peers_cache()
 
                     }
+                    Some("DEL") => {
+                        let topic_name = args.next();
+                        let topic_uuid = args.next();
+
+                        if topic_name == None || topic_uuid == None {
+                            println!("topic_name, topic_uuid are mandatory arguments");
+                        } else {
+                            let topic_name= topic_name.unwrap();
+                            let topic_uuid= topic_uuid.unwrap();
+
+                            domo_cache.delete_value(topic_name, topic_uuid);
+                        }
+
+
+                    }
                     Some("PUB") => {
                         let topic_name = args.next();
 
