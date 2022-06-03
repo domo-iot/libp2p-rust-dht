@@ -264,6 +264,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         match self.write_with_timestamp_check(&topic_name, &topic_uuid, m.clone()) {
             None => {
                 log::info!("New message received");
+                // since a new message arrived, we invalidate peers cache states
+                self.peers_caches_state.clear();
                 return Ok(DomoEvent::PersistentData(m));
             }
             _ => {
@@ -376,7 +378,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         {
             log::info!("Publish error: {:?}", e);
         } else {
-            log::info!("Published cache state");
+            log::info!("Published cache hash");
         }
 
         self.publish_cache_counter-=1;
@@ -487,9 +489,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
+
     pub async fn new(is_persistent_cache: bool, storage: T) -> Self {
         let swarm = crate::domolibp2p::start().await.unwrap();
-
         let peer_id = swarm.local_peer_id().to_string();
 
         let mut c = DomoCache {
@@ -501,7 +503,6 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             local_peer_id: peer_id,
             publish_cache_counter: 4,
             last_cache_repub_timestamp: 0
-
         };
 
         // popolo la mia cache con il contenuto dello sqlite
