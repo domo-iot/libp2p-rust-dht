@@ -1,5 +1,3 @@
-use async_std::task;
-
 // Gossip includes
 use libp2p::gossipsub;
 use libp2p::gossipsub::MessageId;
@@ -19,15 +17,17 @@ either::EitherTransport, muxing::StreamMuxerBox, transport, transport::upgrade::
 use libp2p::pnet::{PnetConfig, PreSharedKey};
 use libp2p::noise;
 use libp2p::yamux::YamuxConfig;
-use libp2p::tcp::TcpConfig;
+use libp2p::tcp::TokioTcpConfig;
+//use libp2p::tcp::TcpConfig;
 use libp2p::Transport;
 
 use libp2p::{
-    development_transport, identity,
+    identity,
     mdns::{Mdns, MdnsConfig, MdnsEvent},
     NetworkBehaviour, PeerId, Swarm,
 };
 
+use libp2p::swarm::SwarmBuilder;
 use std::error::Error;
 use std::time::Duration;
 use std::path::Path;
@@ -67,7 +67,7 @@ pub fn build_transport(
     let noise_config = noise::NoiseConfig::xx(noise_keys).into_authenticated();
     let yamux_config = YamuxConfig::default();
 
-    let base_transport = TcpConfig::new().nodelay(true);
+    let base_transport = TokioTcpConfig::new().nodelay(true);
     let maybe_encrypted = match psk {
         Some(psk) => EitherTransport::Left(
             base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket)),
@@ -75,7 +75,6 @@ pub fn build_transport(
         None => EitherTransport::Right(base_transport),
     };
     maybe_encrypted
-
         .upgrade(Version::V1)
         .authenticate(noise_config)
         .multiplex(yamux_config)
@@ -113,7 +112,7 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
             enable_ipv6: false,
         };
 
-        let mdns = task::block_on(Mdns::new(mdnsconf))?;
+        let mdns = Mdns::new(mdnsconf).await?;
 
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &GossipsubMessage| {
@@ -149,7 +148,15 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
 
 
         let behaviour = DomoBehaviour { mdns, gossipsub };
-        Swarm::new(transport, behaviour, local_peer_id)
+        //Swarm::new(transport, behaviour, local_peer_id)
+
+        SwarmBuilder::new(transport, behaviour, local_peer_id)
+            // We want the connection background tasks to be spawned
+            // onto the tokio runtime.
+            .executor(Box::new(|fut| {
+                tokio::spawn(fut);
+            }))
+            .build()
     };
 
     // Listen on all interfaces and whatever port the OS assigns.

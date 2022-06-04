@@ -3,8 +3,6 @@ mod domolibp2p;
 mod utils;
 mod domopersistentstorage;
 
-use async_std::{io};
-use futures::{prelude::*, select};
 use serde_json::{json};
 use std::error::Error;
 use std::{env};
@@ -14,7 +12,9 @@ use domocache::DomoCacheOperations;
 
 use domopersistentstorage::SqliteStorage;
 
-#[async_std::main]
+use tokio::io::{self, AsyncBufReadExt};
+
+#[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
 
@@ -36,12 +36,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
     let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage).await;
 
-    let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
 
-    // idle loop
+    let mut stdin = io::BufReader::new(io::stdin()).lines();
+
+    //let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
+
+
     loop {
-        select! {
-            m = domo_cache.cache_event_loop().fuse() => {
+        tokio::select! {
+            m = domo_cache.cache_event_loop() => {
                 match m {
                     Ok(domocache::DomoEvent::None) => { },
                     Ok(domocache::DomoEvent::PersistentData(m)) => {
@@ -53,8 +56,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     _ => {}
                 }
             },
-            line = stdin.select_next_some() => {
-                let line = line.expect("Stdin error");
+            line = stdin.next_line() => {
+                let line = line?.expect("Stdin error");
                 let mut args = line.split(" ");
 
                 match args.next(){

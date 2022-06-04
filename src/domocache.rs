@@ -1,7 +1,5 @@
-use async_std::task;
 use chrono::prelude::*;
 use futures::prelude::*;
-use futures::select;
 use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::swarm::SwarmEvent;
 use serde::{Deserialize, Serialize};
@@ -287,9 +285,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     ) -> std::result::Result<DomoEvent, Box<dyn Error>> {
 
         loop {
-            select!(
+            tokio::select!(
                 // sending cache state periodically
-                _ = task::sleep(Duration::from_secs(u64::from(SEND_CACHE_HASH_PERIOD))).fuse() => {
+                _ = tokio::time::sleep(Duration::from_secs(u64::from(SEND_CACHE_HASH_PERIOD))) => {
                             self.send_cache_state();
                 },
 
@@ -574,7 +572,7 @@ mod tests {
     use super::DomoCacheOperations;
 
     #[cfg(test)]
-    #[async_std::test]
+    #[tokio::test]
     async fn test_delete() {
         let storage = super::SqliteStorage::new("./prova.sqlite", true);
 
@@ -598,7 +596,7 @@ mod tests {
     }
 
     #[cfg(test)]
-    #[async_std::test]
+    #[tokio::test]
     async fn test_write_and_read_key() {
         let storage = super::SqliteStorage::new( "./prova.sqlite", true);
         let mut domo_cache = super::DomoCache::new( true, storage).await;
@@ -616,7 +614,7 @@ mod tests {
         assert_eq!(serde_json::json!({ "connected": true}), val)
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_write_twice_same_key() {
         let storage = super::SqliteStorage::new( "./prova.sqlite", true);
 
@@ -649,7 +647,7 @@ mod tests {
         assert_eq!(serde_json::json!({ "connected": false}), val)
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn test_write_old_timestamp() {
         let storage = super::SqliteStorage::new("./prova.sqlite", true);
 
