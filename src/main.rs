@@ -39,8 +39,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 
-    //let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
-
 
     loop {
         tokio::select! {
