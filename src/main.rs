@@ -2,6 +2,7 @@ mod domocache;
 mod domolibp2p;
 mod utils;
 mod domopersistentstorage;
+mod restmessage;
 
 use serde_json::{json};
 use std::error::Error;
@@ -13,6 +14,15 @@ use domocache::DomoCacheOperations;
 use domopersistentstorage::SqliteStorage;
 
 use tokio::io::{self, AsyncBufReadExt};
+
+use axum::{routing::{get, post}, http::StatusCode, response::IntoResponse, Json, Router, extract::Extension};
+
+use std::net::SocketAddr;
+use std::sync::Arc;
+use crate::domocache::DomoCache;
+
+use tokio::sync::{mpsc, oneshot};
+use tokio::sync::mpsc::Sender;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -34,14 +44,50 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
-    let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage).await;
 
+    let mut domo_cache =
+        domocache::DomoCache::new(is_persistent_cache, storage).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+
+
+    let (tx_rest, mut rx_rest) = mpsc::channel(32);
+
+
+    let app = Router::new()
+        // `GET /` goes to `root`
+        .route("/", get(handler)
+            .layer(Extension(tx_rest)));
+
+    tokio::spawn(async move {
+                     axum::Server::bind(&addr).serve(app.into_make_service()).await
+                 });
+
 
     loop {
+
         tokio::select! {
+            Some(rest_message) = rx_rest.recv() => {
+                println!("Rest request");
+
+                match rest_message {
+                    restmessage::RestMessage::GetAll {responder} => {
+                        println!("GetAll");
+
+                        let resp = json!({"value": 1});
+
+                        responder.send(resp);
+                    }
+                    restmessage::RestMessage::GetTopicName {topic_name, responder} => {
+                        println!("Get TopicName");
+                    }
+                    restmessage::RestMessage::GetTopicUUID {topic_name, topic_uuid, responder} => {
+                        println!("Get TopicName, TopicUUID");
+                    }
+                }
+            }
             m = domo_cache.cache_event_loop() => {
                 match m {
                     Ok(domocache::DomoEvent::None) => { },
@@ -133,4 +179,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         }
     }
+}
+
+
+async fn handler(
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) {
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::GetAll{responder: tx_resp};
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+    println!("Got {}", resp.to_string());
+
+
 }
