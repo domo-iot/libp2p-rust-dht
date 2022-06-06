@@ -24,6 +24,12 @@ use crate::domocache::DomoCache;
 use tokio::sync::{mpsc, oneshot};
 use tokio::sync::mpsc::Sender;
 
+use axum::{
+    extract::ws::{WebSocketUpgrade, WebSocket},
+};
+use axum::extract::ws::Message;
+
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
@@ -59,7 +65,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let app = Router::new()
         // `GET /` goes to `root`
         .route("/", get(handler)
-            .layer(Extension(tx_rest)));
+            .layer(Extension(tx_rest)))
+        .route("/ws", get(handle_websocket_req));;
 
     tokio::spawn(async move {
                      axum::Server::bind(&addr).serve(app.into_make_service()).await
@@ -193,5 +200,30 @@ async fn handler(
     let resp = rx_resp.await.unwrap();
     println!("Got {}", resp.to_string());
 
+}
 
+
+async fn handle_websocket(mut socket: WebSocket) {
+    while let Some(msg) = socket.recv().await {
+
+        let msg = msg.unwrap();
+
+        let msg2 = msg.clone();
+        match msg2 {
+            Message::Text(message) => {
+                println!("Received {}", message);
+            }
+            Message::Binary(_) => {}
+            Message::Ping(_) => {}
+            Message::Pong(_) => {}
+            Message::Close(_) => {}
+        }
+
+        socket.send(msg).await.unwrap();
+    }
+}
+
+
+async fn handle_websocket_req(ws: WebSocketUpgrade) -> impl IntoResponse {
+    ws.on_upgrade(handle_websocket)
 }
