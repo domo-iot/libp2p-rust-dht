@@ -10,7 +10,6 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::sync::Mutex;
 use std::time::Duration;
 use crate::utils;
 use crate::domopersistentstorage::{DomoPersistentStorage, SqliteStorage};
@@ -98,26 +97,20 @@ impl Display for DomoCacheElement {
     }
 }
 
-pub struct DomoCacheSharedData<T: DomoPersistentStorage> {
+pub struct DomoCache<T: DomoPersistentStorage> {
     pub storage: T,
     pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
     pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub publish_cache_counter: u8,
-    pub last_cache_repub_timestamp: u128
-}
-
-pub struct DomoCache<T: DomoPersistentStorage> {
-    pub lock_shared_data : Mutex<DomoCacheSharedData<T>>,
+    pub last_cache_repub_timestamp: u128,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub is_persistent_cache: bool,
     pub local_peer_id: String,
-
 }
 
 impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        let l = self.lock_shared_data.lock().unwrap();
-        for (topic_name, map_topic_name) in l.cache.iter() {
+        for (topic_name, map_topic_name) in self.cache.iter() {
             topic_name.hash(state);
 
             for (topic_uuid, value) in map_topic_name.iter() {
@@ -154,8 +147,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             None => {
                 log::info!("New message received");
                 // since a new message arrived, we invalidate peers cache states
-                let mut l = self.lock_shared_data.lock().unwrap();
-                l.peers_caches_state.clear();
+                self.peers_caches_state.clear();
                 return Ok(DomoEvent::PersistentData(m));
             }
             _ => {
@@ -209,48 +201,37 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
         let mut cache_elements = vec![];
 
-        {
-            let mut l = self.lock_shared_data.lock().unwrap();
-
-            for (_, topic_name_map) in l.cache.iter() {
-                for (_, cache_element) in topic_name_map.iter() {
-                    cache_elements.push(cache_element.clone());
-                }
+        for (_, topic_name_map) in self.cache.iter() {
+            for (_, cache_element) in topic_name_map.iter() {
+                cache_elements.push(cache_element.clone());
             }
-
-            l.last_cache_repub_timestamp = utils::get_epoch_ms();
         }
-
 
         for elem in cache_elements {
             self.gossip_pub(elem, true);
         }
 
+        self.last_cache_repub_timestamp = utils::get_epoch_ms();
+
 
     }
 
     fn handle_config_data(&mut self, message: &str) {
-        {
-            let mut l = self.lock_shared_data.lock().unwrap();
-            log::info!("Received cache message, check caches ...");
-            let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
-            l.peers_caches_state.insert(m.peer_id.clone(), m);
-        }
+        log::info!("Received cache message, check caches ...");
+        let m: DomoCacheStateMessage = serde_json::from_str(message).unwrap();
+        self.peers_caches_state.insert(m.peer_id.clone(), m);
         self.check_caches_desynchronization();
     }
 
     fn check_caches_desynchronization(&mut self) {
         let local_hash = self.get_cache_hash();
-        let mut l = self.lock_shared_data.lock().unwrap();
-
-        let (sync, leader) = self.is_synchronized(local_hash, &l.peers_caches_state);
+        let (sync, leader) = self.is_synchronized(local_hash, &self.peers_caches_state);
         if !sync {
             log::info!("Caches are not synchronized");
             if leader {
                 log::info!("Publishing my cache since I am the leader for the hash");
-                if l.last_cache_repub_timestamp <
+                if self.last_cache_repub_timestamp <
                     (utils::get_epoch_ms()-1000*u128::from(SEND_CACHE_HASH_PERIOD)) {
-                    std::mem::drop(l);
                     self.publish_cache();
                 } else {
                     log::info!("Skipping cache repub since it occurred not so much time ago");
@@ -286,19 +267,16 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
 
 
-        let mut l = self.lock_shared_data.lock().unwrap();
 
-        l.publish_cache_counter-=1;
-        if l.publish_cache_counter == 0 {
-            l.publish_cache_counter = 4;
-            std::mem::drop(l);
+        self.publish_cache_counter-=1;
+        if self.publish_cache_counter == 0 {
+            self.publish_cache_counter = 4;
             self.check_caches_desynchronization();
         }
     }
 
     pub fn print_peers_cache(&self) {
-        let l = self.lock_shared_data.lock().unwrap();
-        for (peer_id, peer_data) in l.peers_caches_state.iter() {
+        for (peer_id, peer_data) in self.peers_caches_state.iter() {
             println!(
                 "Peer {}, HASH: {}, TIMESTAMP: {}",
                 peer_id, peer_data.cache_hash, peer_data.publication_timestamp
@@ -398,21 +376,16 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             is_persistent_cache,
             swarm,
             local_peer_id: peer_id,
-            lock_shared_data: Mutex::new(DomoCacheSharedData{
-                publish_cache_counter: 4,
-                last_cache_repub_timestamp: 0,
-                storage: storage,
-                cache: BTreeMap::new(),
-                peers_caches_state: BTreeMap::new()
-            }),
+            publish_cache_counter: 4,
+            last_cache_repub_timestamp: 0,
+            storage: storage,
+            cache: BTreeMap::new(),
+            peers_caches_state: BTreeMap::new()
         };
 
         // popolo la mia cache con il contenuto dello sqlite
 
-        let mut l = c.lock_shared_data.lock().unwrap();
-        let ret = l.storage.get_all_elements();
-
-        std::mem::drop(l);
+        let ret = c.storage.get_all_elements();
 
         for elem in ret {
             // non ripubblicp
@@ -444,8 +417,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     }
 
     pub fn print(&self) {
-        let l = self.lock_shared_data.lock().unwrap();
-        for (topic_name, topic_name_map) in l.cache.iter() {
+        for (topic_name, topic_name_map) in self.cache.iter() {
             println!("TopicName {} ", topic_name);
 
             for (_, value) in topic_name_map.iter() {
@@ -476,25 +448,24 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         publish: bool,
     ) {
         {
-            let mut l = self.lock_shared_data.lock().unwrap();
             // topic_name already present
-            if l.cache.contains_key(&cache_element.topic_name) {
-                l.cache
+            if self.cache.contains_key(&cache_element.topic_name) {
+                self.cache
                     .get_mut(&cache_element.topic_name)
                     .unwrap()
                     .insert(cache_element.topic_uuid.clone(), cache_element.clone());
             } else {
                 // first time that we add an element of topic_name type
-                l.cache
+                self.cache
                     .insert(cache_element.topic_name.clone(), BTreeMap::new());
-                l.cache
+                self.cache
                     .get_mut(&cache_element.topic_name)
                     .unwrap()
                     .insert(cache_element.topic_uuid.clone(), cache_element.clone());
             }
 
             if persist {
-                l.storage.store(&cache_element);
+                self.storage.store(&cache_element);
             }
         }
 
@@ -508,8 +479,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         topic_name: &str,
         topic_uuid: &str,
     ) -> Option<DomoCacheElement> {
-        let l = self.lock_shared_data.lock().unwrap();
-        let value = l.cache.get(topic_name);
+        let value = self.cache.get(topic_name);
 
         match value {
             Some(topic_map) => match topic_map.get(topic_uuid) {
@@ -582,13 +552,10 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
         elem: DomoCacheElement,
     ) -> Option<DomoCacheElement> {
 
-        let l = self.lock_shared_data.lock().unwrap();
-
-        let ret = l.cache.get(topic_name);
+        let ret = self.cache.get(topic_name);
 
         match ret {
             None => {
-                std::mem::drop(l);
                 self.insert_cache_element(elem, self.is_persistent_cache, false);
                 None
             },
@@ -596,7 +563,6 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
 
                 match topic_map.get(topic_uuid) {
                     None => {
-                        std::mem::drop(l);
                         self.insert_cache_element(elem,
                                                   self.is_persistent_cache,
                                                   false);
@@ -604,7 +570,6 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
                     }
                     Some(value) => {
                         if elem.publication_timestamp > value.publication_timestamp {
-                            std::mem::drop(l);
                             self.insert_cache_element(elem, self.is_persistent_cache, false);
                             None
                         } else {
