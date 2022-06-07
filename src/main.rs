@@ -68,12 +68,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tx_get_topicname = tx_rest.clone();
 
+    let tx_get_topicname_topicuuid = tx_rest.clone();
+
+    let tx_post_topicname_topicuuid = tx_rest.clone();
+
     let app = Router::new()
         // `GET /` goes to `root`
         .route("/get_all", get(get_all_handler)
             .layer(Extension(tx_get_all)))
         .route("/topic_name/:topic_name", get(get_topicname_handler)
             .layer(Extension(tx_get_topicname)))
+        .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", get(get_topicname_topicuuid_handler)
+            .layer(Extension(tx_get_topicname_topicuuid)))
+        .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", post(post_topicname_topicuuid_handler)
+            .layer(Extension(tx_post_topicname_topicuuid)))
+
+
         .route("/ws", get(handle_websocket_req));;
 
     tokio::spawn(async move {
@@ -97,10 +107,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         responder.send(resp);
                     }
                     restmessage::RestMessage::GetTopicUUID {topic_name, topic_uuid, responder} => {
-                        println!("Get TopicName, TopicUUID");
+                        let resp = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
+                        responder.send(resp);
+                    }
+                    restmessage::RestMessage::PostTopicUUID {topic_name, topic_uuid, value, responder} => {
+                        domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
+                        responder.send(Ok(value));
                     }
                 }
             }
+
             m = domo_cache.cache_event_loop() => {
                 match m {
                     Ok(domocache::DomoEvent::None) => { },
@@ -194,10 +210,60 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
+async fn post_topicname_topicuuid_handler(
+    Json(value): Json<serde_json::Value>,
+    Path((topic_name, topic_uuid)): Path<(String, String)>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+) -> impl IntoResponse {
+
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::PostTopicUUID{
+        topic_name: topic_name,
+        topic_uuid: topic_uuid,
+        value: value,
+        responder: tx_resp };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+    }
+
+
+
+}
+
+async fn get_topicname_topicuuid_handler(
+    Path((topic_name, topic_uuid)): Path<(String, String)>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+) -> impl IntoResponse {
+
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::GetTopicUUID{
+        topic_name: topic_name,
+        topic_uuid: topic_uuid,
+        responder: tx_resp };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+    }
+
+
+}
 
 async fn get_topicname_handler(
     Path(topic_name): Path<String>,
-    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
 ) -> impl IntoResponse {
 
     let (tx_resp, rx_resp) = oneshot::channel();
