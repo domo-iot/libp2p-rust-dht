@@ -32,7 +32,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use crate::websocketmessage::WebSocketDomoMessage;
+use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage};
 use axum::extract::ws::Message;
 use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
@@ -79,9 +79,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tx_pub_message = tx_rest.clone();
 
-    let (tx_websocket, mut rx_websocket) = broadcast::channel::<WebSocketDomoMessage>(16);
+    let (async_tx_websocket, mut async_rx_websocket) =
+        broadcast::channel::<AsyncWebSocketDomoMessage>(16);
 
-    let tx_websocket_copy = tx_websocket.clone();
+    let async_tx_websocket_copy = async_tx_websocket.clone();
+
+    let (sync_tx_websocket, mut sync_rx_websocket) =
+        broadcast::channel::<SyncWebSocketDomoMessage>(16);
+
+    let sync_tx_websocket_copy = sync_tx_websocket.clone();
 
     let app = Router::new()
         // `GET /` goes to `root`
@@ -109,7 +115,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .route("/pub", post(pub_message).layer(Extension(tx_pub_message)))
         .route(
             "/ws",
-            get(handle_websocket_req).layer(Extension(tx_websocket_copy)),
+            get(handle_websocket_req)
+                .layer(Extension(async_tx_websocket_copy))
+                .layer(Extension(sync_tx_websocket_copy)),
         );
 
     tokio::spawn(async move {
@@ -120,6 +128,24 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     loop {
         tokio::select! {
+            webs_message = sync_rx_websocket.recv() => {
+                println!("Sync websocket req");
+
+                match webs_message.unwrap() {
+                    SyncWebSocketDomoMessage::RequestGetAll { ws_client_id, req_id} => {
+
+                        let r = SyncWebSocketDomoMessage::Response {
+                            ws_client_id: ws_client_id,
+                            req_id: req_id,
+                            value: domo_cache.get_all()
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+                    _ => {}
+                }
+
+            }
             Some(rest_message) = rx_rest.recv() => {
                 println!("Rest request");
 
@@ -157,19 +183,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Ok(domocache::DomoEvent::None) => { },
                     Ok(domocache::DomoEvent::PersistentData(m)) => {
                         println!("Persistent message received {} {}", m.topic_name, m.topic_uuid);
-                        tx_websocket.send(
-                            WebSocketDomoMessage::Persistent {
+                        async_tx_websocket.send(
+                            AsyncWebSocketDomoMessage::Persistent {
                              topic_name: m.topic_name,
                              topic_uuid: m.topic_uuid,
-                                value: m.value
+                             value: m.value
                         });
 
                     },
                     Ok(domocache::DomoEvent::VolatileData(m)) => {
                         println!("Volatile message {}", m.to_string());
 
-                        tx_websocket.send(
-                            WebSocketDomoMessage::Volatile {
+                        async_tx_websocket.send(
+                            AsyncWebSocketDomoMessage::Volatile {
                                 value: m
                         });
 
@@ -386,21 +412,44 @@ async fn handle_webs(socket: WebSocket) {
 
 async fn handle_websocket_req(
     ws: WebSocketUpgrade,
-    Extension(tx_ws): Extension<broadcast::Sender<WebSocketDomoMessage>>,
+    Extension(async_tx_ws): Extension<broadcast::Sender<AsyncWebSocketDomoMessage>>,
+    Extension(sync_tx_ws): Extension<broadcast::Sender<SyncWebSocketDomoMessage>>,
 ) -> impl IntoResponse {
-    let mut rx_ws = tx_ws.subscribe();
+    // channel for receiving async messages
+    let mut async_rx_ws = async_tx_ws.subscribe();
+
+    // channel for receiving sync messages
+    let mut sync_rx_ws = sync_tx_ws.subscribe();
 
     ws.on_upgrade(|mut socket| async move {
+        let my_id = utils::get_epoch_ms().to_string();
+
         loop {
             tokio::select! {
-                        rx = rx_ws.recv() => {
-                             let msg = rx.unwrap();
+                        sync_rx = sync_rx_ws.recv() => {
+                            let msg = sync_rx.unwrap();
+                            match msg {
+                                    SyncWebSocketDomoMessage::Response {
+                                        value,
+                                        ws_client_id,
+                                        req_id
+                                    } => {
+                                        if ws_client_id == my_id {
+                                                socket.send(Message::Text("Sync message".to_string())).await;
+                                        }
+                                    }
+                                    _=> {}
+                            }
+
+                        }
+                        async_rx = async_rx_ws.recv() => {
+                             let msg = async_rx.unwrap();
                              match msg {
-                                WebSocketDomoMessage::Volatile {value} => {
+                                AsyncWebSocketDomoMessage::Volatile {value} => {
                                         println!("Volatile");
                                         socket.send(Message::Text(value.to_string())).await;
                                 }
-                                WebSocketDomoMessage::Persistent {topic_name, topic_uuid, value} => {
+                                AsyncWebSocketDomoMessage::Persistent {topic_name, topic_uuid, value} => {
                                         println!("Persistent");
                                         let m = json!({
                                             "topic_name": topic_name,
@@ -416,6 +465,12 @@ async fn handle_websocket_req(
                             match msg.unwrap() {
                                 Message::Text(message) => {
                                     println!("Received command {}", message);
+                                    sync_tx_ws.send(
+                                        SyncWebSocketDomoMessage::RequestGetAll {
+                                            ws_client_id: my_id.clone(),
+                                            req_id: my_id.clone()
+                                        }
+                                    );
                                 }
                                 Message::Close(_) => {
                                     return;
