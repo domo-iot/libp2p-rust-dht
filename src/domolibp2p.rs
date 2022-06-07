@@ -11,13 +11,13 @@ use std::hash::{Hash, Hasher};
 //
 
 use libp2p::core::{
-either::EitherTransport, muxing::StreamMuxerBox, transport, transport::upgrade::Version,
+    either::EitherTransport, muxing::StreamMuxerBox, transport, transport::upgrade::Version,
 };
 
-use libp2p::pnet::{PnetConfig, PreSharedKey};
 use libp2p::noise;
-use libp2p::yamux::YamuxConfig;
+use libp2p::pnet::{PnetConfig, PreSharedKey};
 use libp2p::tcp::TokioTcpConfig;
+use libp2p::yamux::YamuxConfig;
 //use libp2p::tcp::TcpConfig;
 use libp2p::Transport;
 
@@ -29,9 +29,9 @@ use libp2p::{
 
 use libp2p::swarm::SwarmBuilder;
 use std::error::Error;
-use std::time::Duration;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
+use std::time::Duration;
 
 use std::str::FromStr;
 
@@ -48,7 +48,6 @@ pub fn get_ipfs_path() -> Box<Path> {
 
 pub fn get_psk(path: Box<Path>) -> std::io::Result<Option<String>> {
     let swarm_key_file = path.join("shared_key.key");
-
 
     match fs::read_to_string(swarm_key_file) {
         Ok(text) => Ok(Some(text)),
@@ -91,7 +90,6 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     let topic_persistent_data = Topic::new("domo-persistent-data");
     let topic_volatile_data = Topic::new("domo-volatile-data");
     let topic_config = Topic::new("domo-config");
-
 
     // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
     //let transport = development_transport(local_key.clone()).await?;
@@ -144,8 +142,6 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
 
         // subscribes to config topic
         gossipsub.subscribe(&topic_config).unwrap();
-
-
 
         let behaviour = DomoBehaviour { mdns, gossipsub };
         //Swarm::new(transport, behaviour, local_peer_id)
