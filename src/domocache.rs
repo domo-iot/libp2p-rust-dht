@@ -37,7 +37,7 @@ pub trait DomoCacheOperations {
 
     // method to read a DomoCacheElement
     fn read_cache_element(
-        &mut self,
+        &self,
         topic_name: &str,
         topic_uuid: &str,
     ) -> Option<DomoCacheElement>;
@@ -195,6 +195,22 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
         // è sincronizzata
         (true, true)
+    }
+
+    pub fn get_topic_uuid(&self, topic_name: &str, topic_uuid: &str) -> Result<Value, String>{
+        let ret = self.read_cache_element(topic_name, topic_uuid);
+        match ret {
+            None => { return Err(String::from("TopicName TopicUUID not found"));}
+            Some(cache_element) => {
+
+                return Ok(serde_json::json!({
+                            "topic_name": topic_name.clone(),
+                            "topic_uuid": topic_uuid.clone(),
+                            "value": cache_element.value.clone()
+                }));
+
+            }
+        }
     }
 
     pub fn get_topic_name(&self, topic_name: &str) -> Result<Value, String> {
@@ -522,7 +538,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
     }
 
     fn read_cache_element(
-        &mut self,
+        &self,
         topic_name: &str,
         topic_uuid: &str,
     ) -> Option<DomoCacheElement> {
