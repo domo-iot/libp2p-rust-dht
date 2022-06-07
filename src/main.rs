@@ -74,6 +74,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tx_delete_topicname_topicuuid = tx_rest.clone();
 
+    let tx_pub_message = tx_rest.clone();
+
+
 
     let app = Router::new()
         // `GET /` goes to `root`
@@ -87,6 +90,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .layer(Extension(tx_post_topicname_topicuuid)))
         .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", delete(delete_topicname_topicuuid_handler)
             .layer(Extension(tx_delete_topicname_topicuuid)))
+        .route("/pub", post(pub_message)
+            .layer(Extension(tx_pub_message)))
 
 
 
@@ -124,7 +129,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         domo_cache.delete_value(&topic_name, &topic_uuid);
                         responder.send(Ok(json!({})));
                     }
-
+                    restmessage::RestMessage::PubMessage {value, responder} => {
+                        domo_cache.pub_value(value.clone());
+                        responder.send(Ok(value));
+                    }
 
                 }
             }
@@ -245,6 +253,31 @@ async fn delete_topicname_topicuuid_handler(
     }
 
 }
+
+async fn pub_message(
+    Json(value): Json<serde_json::Value>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+) -> impl IntoResponse {
+
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::PubMessage{
+        value: value,
+        responder: tx_resp };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+    }
+
+}
+
+
+
 async fn post_topicname_topicuuid_handler(
     Json(value): Json<serde_json::Value>,
     Path((topic_name, topic_uuid)): Path<(String, String)>,
