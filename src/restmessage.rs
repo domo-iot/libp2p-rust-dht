@@ -1,7 +1,7 @@
 use std::result;
 use tokio::sync::oneshot;
 
-type RestResponder = oneshot::Sender<serde_json::Value>;
+type RestResponder = oneshot::Sender<Result<serde_json::Value, String>>;
 
 #[derive(Debug)]
 pub enum RestMessage {

@@ -197,6 +197,53 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         (true, true)
     }
 
+    pub fn get_topic_name(&self, topic_name: &str) -> Result<Value, String> {
+        let s = r#"[]"#;
+        let mut ret: Value = serde_json::from_str(s).unwrap();
+
+        match self.cache.get(topic_name){
+            None => {
+                return Err(String::from("topic_name not found"));
+            }
+            Some(topic_name_map) => {
+
+                for (topic_uuid, cache_element) in topic_name_map.iter(){
+
+                    if cache_element.deleted == false {
+                        let val = serde_json::json!({
+                            "topic_name": topic_name.clone(),
+                            "topic_uuid": topic_uuid.clone(),
+                            "value": cache_element.value.clone()
+                        });
+                        ret.as_array_mut().unwrap().push(val);
+                    }
+                }
+                return Ok(ret);
+            }
+        }
+    }
+
+    pub fn get_all(&self) -> Value {
+
+        let s = r#"[]"#;
+        let mut ret: Value = serde_json::from_str(s).unwrap();
+
+        for (topic_name, topic_name_map) in self.cache.iter() {
+            for (topic_uuid, cache_element) in topic_name_map.iter() {
+                let val = serde_json::json!({
+                    "topic_name": topic_name.clone(),
+                    "topic_uuid": topic_uuid.clone(),
+                    "value": cache_element.value.clone()
+                    }
+                );
+                ret.as_array_mut().unwrap().push(val);
+
+            }
+        }
+        ret
+    }
+
+
     fn publish_cache(&mut self) {
 
         let mut cache_elements = vec![];

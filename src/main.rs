@@ -19,6 +19,7 @@ use axum::{routing::{get, post}, http::StatusCode, response::IntoResponse, Json,
 
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use crate::domocache::DomoCache;
 
 use tokio::sync::{mpsc, oneshot};
@@ -27,7 +28,9 @@ use tokio::sync::mpsc::Sender;
 use axum::{
     extract::ws::{WebSocketUpgrade, WebSocket},
 };
+use axum::extract::Path;
 use axum::extract::ws::Message;
+use tokio::time::sleep;
 
 
 #[tokio::main]
@@ -61,11 +64,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let (tx_rest, mut rx_rest) = mpsc::channel(32);
 
+    let tx_get_all = tx_rest.clone();
+
+    let tx_get_topicname = tx_rest.clone();
 
     let app = Router::new()
         // `GET /` goes to `root`
-        .route("/", get(handler)
-            .layer(Extension(tx_rest)))
+        .route("/get_all", get(get_all_handler)
+            .layer(Extension(tx_get_all)))
+        .route("/topic_name/:topic_name", get(get_topicname_handler)
+            .layer(Extension(tx_get_topicname)))
         .route("/ws", get(handle_websocket_req));;
 
     tokio::spawn(async move {
@@ -81,14 +89,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 match rest_message {
                     restmessage::RestMessage::GetAll {responder} => {
-                        println!("GetAll");
-
-                        let resp = json!({"value": 1});
-
-                        responder.send(resp);
+                        let resp = domo_cache.get_all();
+                        responder.send(Ok(resp));
                     }
                     restmessage::RestMessage::GetTopicName {topic_name, responder} => {
-                        println!("Get TopicName");
+                        let resp = domo_cache.get_topic_name(&topic_name);
+                        responder.send(resp);
                     }
                     restmessage::RestMessage::GetTopicUUID {topic_name, topic_uuid, responder} => {
                         println!("Get TopicName, TopicUUID");
@@ -189,16 +195,40 @@ async fn main() -> Result<(), Box<dyn Error>> {
 }
 
 
-async fn handler(
+async fn get_topicname_handler(
+    Path(topic_name): Path<String>,
     Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
-) {
+) -> impl IntoResponse {
+
     let (tx_resp, rx_resp) = oneshot::channel();
 
-    let m = restmessage::RestMessage::GetAll{responder: tx_resp};
+    let m = restmessage::RestMessage::GetTopicName{ topic_name: topic_name, responder: tx_resp };
     tx_rest.send(m).await.unwrap();
 
     let resp = rx_resp.await.unwrap();
-    println!("Got {}", resp.to_string());
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+    }
+
+
+}
+
+
+
+async fn get_all_handler(
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) -> impl IntoResponse {
+
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::GetAll{ responder: tx_resp };
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    (StatusCode::OK, Json(resp.unwrap()))
 
 }
 
