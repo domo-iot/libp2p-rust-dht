@@ -1,6 +1,6 @@
 use rusqlite::{params, Connection, OpenFlags};
 
-use crate::domocache:: {DomoCacheElement};
+use crate::domocache::DomoCacheElement;
 
 pub trait DomoPersistentStorage {
     fn store(&mut self, element: &DomoCacheElement);
@@ -15,8 +15,7 @@ pub struct SqliteStorage {
 impl SqliteStorage {
     pub fn new(sqlite_file: &str, write_access: bool) -> Self {
         let conn = if write_access == false {
-            match Connection::open_with_flags(sqlite_file,
-                                              OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            match Connection::open_with_flags(sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
                 Ok(conn) => conn,
                 _ => {
                     panic!("Error while opening the sqlite DB");
@@ -98,7 +97,7 @@ impl DomoPersistentStorage for SqliteStorage {
                     deleted: row.get(3)?,
                     publication_timestamp: pub_timestamp_string.parse().unwrap(),
                     publisher_peer_id: row.get(5)?,
-                    republication_timestamp: 0
+                    republication_timestamp: 0,
                 })
             })
             .unwrap();
@@ -120,37 +119,35 @@ mod tests {
     #[cfg(test)]
     #[test]
     #[should_panic]
-    fn open_read_non_existent_file(){
+    fn open_read_non_existent_file() {
         let s = super::SqliteStorage::new("/tmp/aaskdjkasdka.sqlite", false);
     }
 
     #[test]
-    fn open_write_non_existent_file(){
+    fn open_write_non_existent_file() {
         let s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
         assert_eq!(s.sqlite_file, "/tmp/nkasjkldjad.sqlite");
     }
 
     #[test]
-    fn test_initial_get_all_element(){
+    fn test_initial_get_all_element() {
         let mut s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
         let v = s.get_all_elements();
         assert_eq!(v.len(), 0);
     }
 
     #[test]
-    fn test_store(){
+    fn test_store() {
+        let mut s = super::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
 
-        let mut s =
-            super::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
-
-        let m = DomoCacheElement{
+        let m = DomoCacheElement {
             topic_name: "a".to_string(),
             topic_uuid: "a".to_string(),
             value: Default::default(),
             deleted: false,
             publication_timestamp: 0,
             publisher_peer_id: "a".to_string(),
-            republication_timestamp: 0
+            republication_timestamp: 0,
         };
 
         s.store(&m);
@@ -159,9 +156,5 @@ mod tests {
 
         assert_eq!(v.len(), 1);
         assert_eq!(v[0], m);
-
     }
-
-
-
 }

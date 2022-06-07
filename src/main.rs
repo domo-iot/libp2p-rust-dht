@@ -1,12 +1,13 @@
 mod domocache;
 mod domolibp2p;
-mod utils;
 mod domopersistentstorage;
 mod restmessage;
+mod utils;
+mod websocketmessage;
 
-use serde_json::{json};
+use serde_json::json;
+use std::env;
 use std::error::Error;
-use std::{env};
 
 use chrono::prelude::*;
 use domocache::DomoCacheOperations;
@@ -15,23 +16,27 @@ use domopersistentstorage::SqliteStorage;
 
 use tokio::io::{self, AsyncBufReadExt};
 
-use axum::{routing::{get, post, delete}, http::StatusCode, response::IntoResponse, Json, Router, extract::Extension};
+use axum::{
+    extract::Extension,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{delete, get, post},
+    Json, Router,
+};
 
+use crate::domocache::DomoCache;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use crate::domocache::DomoCache;
 
-use tokio::sync::{mpsc, oneshot};
 use tokio::sync::mpsc::Sender;
+use tokio::sync::{broadcast, mpsc, oneshot};
 
-use axum::{
-    extract::ws::{WebSocketUpgrade, WebSocket},
-};
-use axum::extract::Path;
+use crate::websocketmessage::WebSocketDomoMessage;
 use axum::extract::ws::Message;
+use axum::extract::ws::{WebSocket, WebSocketUpgrade};
+use axum::extract::Path;
 use tokio::time::sleep;
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -54,13 +59,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
 
-    let mut domo_cache =
-        domocache::DomoCache::new(is_persistent_cache, storage).await;
+    let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-
 
     let (tx_rest, mut rx_rest) = mpsc::channel(32);
 
@@ -76,34 +79,46 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tx_pub_message = tx_rest.clone();
 
+    let (tx_websocket, mut rx_websocket) = broadcast::channel::<WebSocketDomoMessage>(16);
 
+    let tx_websocket_copy = tx_websocket.clone();
 
     let app = Router::new()
         // `GET /` goes to `root`
-        .route("/get_all", get(get_all_handler)
-            .layer(Extension(tx_get_all)))
-        .route("/topic_name/:topic_name", get(get_topicname_handler)
-            .layer(Extension(tx_get_topicname)))
-        .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", get(get_topicname_topicuuid_handler)
-            .layer(Extension(tx_get_topicname_topicuuid)))
-        .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", post(post_topicname_topicuuid_handler)
-            .layer(Extension(tx_post_topicname_topicuuid)))
-        .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", delete(delete_topicname_topicuuid_handler)
-            .layer(Extension(tx_delete_topicname_topicuuid)))
-        .route("/pub", post(pub_message)
-            .layer(Extension(tx_pub_message)))
-
-
-
-        .route("/ws", get(handle_websocket_req));;
+        .route(
+            "/get_all",
+            get(get_all_handler).layer(Extension(tx_get_all)),
+        )
+        .route(
+            "/topic_name/:topic_name",
+            get(get_topicname_handler).layer(Extension(tx_get_topicname)),
+        )
+        .route(
+            "/topic_name/:topic_name/topic_uuid/:topic_uuid",
+            get(get_topicname_topicuuid_handler).layer(Extension(tx_get_topicname_topicuuid)),
+        )
+        .route(
+            "/topic_name/:topic_name/topic_uuid/:topic_uuid",
+            post(post_topicname_topicuuid_handler).layer(Extension(tx_post_topicname_topicuuid)),
+        )
+        .route(
+            "/topic_name/:topic_name/topic_uuid/:topic_uuid",
+            delete(delete_topicname_topicuuid_handler)
+                .layer(Extension(tx_delete_topicname_topicuuid)),
+        )
+        .route("/pub", post(pub_message).layer(Extension(tx_pub_message)))
+        .route(
+            "/ws",
+            get(handle_websocket_req).layer(Extension(tx_websocket_copy)),
+        );
 
     tokio::spawn(async move {
-                     axum::Server::bind(&addr).serve(app.into_make_service()).await
-                 });
-
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service())
+            .await
+    });
 
     loop {
-
         tokio::select! {
             Some(rest_message) = rx_rest.recv() => {
                 println!("Rest request");
@@ -142,9 +157,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Ok(domocache::DomoEvent::None) => { },
                     Ok(domocache::DomoEvent::PersistentData(m)) => {
                         println!("Persistent message received {} {}", m.topic_name, m.topic_uuid);
+                        tx_websocket.send(
+                            WebSocketDomoMessage::Persistent {
+                             topic_name: m.topic_name,
+                             topic_uuid: m.topic_uuid,
+                                value: m.value
+                        });
+
                     },
                     Ok(domocache::DomoEvent::VolatileData(m)) => {
                         println!("Volatile message {}", m.to_string());
+
+                        tx_websocket.send(
+                            WebSocketDomoMessage::Volatile {
+                                value: m
+                        });
+
                     }
                     _ => {}
                 }
@@ -230,18 +258,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-
 async fn delete_topicname_topicuuid_handler(
     Path((topic_name, topic_uuid)): Path<(String, String)>,
-    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
 ) -> impl IntoResponse {
-
     let (tx_resp, rx_resp) = oneshot::channel();
 
-    let m = restmessage::RestMessage::DeleteTopicUUID{
+    let m = restmessage::RestMessage::DeleteTopicUUID {
         topic_name: topic_name,
         topic_uuid: topic_uuid,
-        responder: tx_resp };
+        responder: tx_resp,
+    };
 
     tx_rest.send(m).await.unwrap();
 
@@ -249,21 +276,20 @@ async fn delete_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
-
 }
 
 async fn pub_message(
     Json(value): Json<serde_json::Value>,
-    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
 ) -> impl IntoResponse {
-
     let (tx_resp, rx_resp) = oneshot::channel();
 
-    let m = restmessage::RestMessage::PubMessage{
+    let m = restmessage::RestMessage::PubMessage {
         value: value,
-        responder: tx_resp };
+        responder: tx_resp,
+    };
 
     tx_rest.send(m).await.unwrap();
 
@@ -271,26 +297,23 @@ async fn pub_message(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
-
 }
-
-
 
 async fn post_topicname_topicuuid_handler(
     Json(value): Json<serde_json::Value>,
     Path((topic_name, topic_uuid)): Path<(String, String)>,
-    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
 ) -> impl IntoResponse {
-
     let (tx_resp, rx_resp) = oneshot::channel();
 
-    let m = restmessage::RestMessage::PostTopicUUID{
+    let m = restmessage::RestMessage::PostTopicUUID {
         topic_name: topic_name,
         topic_uuid: topic_uuid,
         value: value,
-        responder: tx_resp };
+        responder: tx_resp,
+    };
 
     tx_rest.send(m).await.unwrap();
 
@@ -298,24 +321,21 @@ async fn post_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
-
-
-
 }
 
 async fn get_topicname_topicuuid_handler(
     Path((topic_name, topic_uuid)): Path<(String, String)>,
-    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
 ) -> impl IntoResponse {
-
     let (tx_resp, rx_resp) = oneshot::channel();
 
-    let m = restmessage::RestMessage::GetTopicUUID{
+    let m = restmessage::RestMessage::GetTopicUUID {
         topic_name: topic_name,
         topic_uuid: topic_uuid,
-        responder: tx_resp };
+        responder: tx_resp,
+    };
 
     tx_rest.send(m).await.unwrap();
 
@@ -323,71 +343,87 @@ async fn get_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
-
-
 }
 
 async fn get_topicname_handler(
     Path(topic_name): Path<String>,
-    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
 ) -> impl IntoResponse {
-
     let (tx_resp, rx_resp) = oneshot::channel();
 
-    let m = restmessage::RestMessage::GetTopicName{ topic_name: topic_name, responder: tx_resp };
+    let m = restmessage::RestMessage::GetTopicName {
+        topic_name: topic_name,
+        responder: tx_resp,
+    };
     tx_rest.send(m).await.unwrap();
 
     let resp = rx_resp.await.unwrap();
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
-
-
 }
-
-
 
 async fn get_all_handler(
     Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
 ) -> impl IntoResponse {
-
     let (tx_resp, rx_resp) = oneshot::channel();
 
-    let m = restmessage::RestMessage::GetAll{ responder: tx_resp };
+    let m = restmessage::RestMessage::GetAll { responder: tx_resp };
     tx_rest.send(m).await.unwrap();
 
     let resp = rx_resp.await.unwrap();
 
     (StatusCode::OK, Json(resp.unwrap()))
-
 }
 
+async fn handle_webs(socket: WebSocket) {
+    println!("Here");
+}
 
-async fn handle_websocket(mut socket: WebSocket) {
-    while let Some(msg) = socket.recv().await {
+async fn handle_websocket_req(
+    ws: WebSocketUpgrade,
+    Extension(tx_ws): Extension<broadcast::Sender<WebSocketDomoMessage>>,
+) -> impl IntoResponse {
+    let mut rx_ws = tx_ws.subscribe();
 
-        let msg = msg.unwrap();
+    ws.on_upgrade(|mut socket| async move {
+        loop {
+            tokio::select! {
+                        rx = rx_ws.recv() => {
+                             let msg = rx.unwrap();
+                             match msg {
+                                WebSocketDomoMessage::Volatile {value} => {
+                                        println!("Volatile");
+                                        socket.send(Message::Text(value.to_string())).await;
+                                }
+                                WebSocketDomoMessage::Persistent {topic_name, topic_uuid, value} => {
+                                        println!("Persistent");
+                                        let m = json!({
+                                            "topic_name": topic_name,
+                                            "topic_uuid": topic_uuid,
+                                            "value": value
+                                        });
+                                        socket.send(Message::Text(m.to_string())).await;
+                                }
+                             }
+                        }
+                        Some(msg) = socket.recv() => {
 
-        let msg2 = msg.clone();
-        match msg2 {
-            Message::Text(message) => {
-                println!("Received {}", message);
+                            match msg.unwrap() {
+                                Message::Text(message) => {
+                                    println!("Received command {}", message);
+                                }
+                                Message::Close(_) => {
+                                    return;
+                                }
+                                _ => {}
+                            }
+                        }
             }
-            Message::Binary(_) => {}
-            Message::Ping(_) => {}
-            Message::Pong(_) => {}
-            Message::Close(_) => {}
         }
-
-        socket.send(msg).await.unwrap();
-    }
-}
-
-
-async fn handle_websocket_req(ws: WebSocketUpgrade) -> impl IntoResponse {
-    ws.on_upgrade(handle_websocket)
+    })
 }
