@@ -246,13 +246,15 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
         for (topic_name, topic_name_map) in self.cache.iter() {
             for (topic_uuid, cache_element) in topic_name_map.iter() {
-                let val = serde_json::json!({
+                if cache_element.deleted == false {
+                    let val = serde_json::json!({
                     "topic_name": topic_name.clone(),
                     "topic_uuid": topic_uuid.clone(),
                     "value": cache_element.value.clone()
-                    }
-                );
-                ret.as_array_mut().unwrap().push(val);
+                            }
+                    );
+                    ret.as_array_mut().unwrap().push(val);
+                }
 
             }
         }
@@ -481,10 +483,16 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
     pub fn print(&self) {
         for (topic_name, topic_name_map) in self.cache.iter() {
-            println!("TopicName {} ", topic_name);
+
+            let mut first = true;
+
 
             for (_, value) in topic_name_map.iter() {
                 if value.deleted == false {
+                    if first == true {
+                        println!("TopicName {} ", topic_name);
+                        first = false;
+                    }
                     println!("{}", value);
                 }
             }
