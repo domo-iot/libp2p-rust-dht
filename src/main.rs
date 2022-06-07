@@ -15,7 +15,7 @@ use domopersistentstorage::SqliteStorage;
 
 use tokio::io::{self, AsyncBufReadExt};
 
-use axum::{routing::{get, post}, http::StatusCode, response::IntoResponse, Json, Router, extract::Extension};
+use axum::{routing::{get, post, delete}, http::StatusCode, response::IntoResponse, Json, Router, extract::Extension};
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -72,6 +72,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tx_post_topicname_topicuuid = tx_rest.clone();
 
+    let tx_delete_topicname_topicuuid = tx_rest.clone();
+
+
     let app = Router::new()
         // `GET /` goes to `root`
         .route("/get_all", get(get_all_handler)
@@ -82,6 +85,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
             .layer(Extension(tx_get_topicname_topicuuid)))
         .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", post(post_topicname_topicuuid_handler)
             .layer(Extension(tx_post_topicname_topicuuid)))
+        .route("/topic_name/:topic_name/topic_uuid/:topic_uuid", delete(delete_topicname_topicuuid_handler)
+            .layer(Extension(tx_delete_topicname_topicuuid)))
+
 
 
         .route("/ws", get(handle_websocket_req));;
@@ -114,6 +120,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
                         responder.send(Ok(value));
                     }
+                    restmessage::RestMessage::DeleteTopicUUID {topic_name, topic_uuid, responder} => {
+                        domo_cache.delete_value(&topic_name, &topic_uuid);
+                        responder.send(Ok(json!({})));
+                    }
+
+
                 }
             }
 
@@ -210,6 +222,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
+
+async fn delete_topicname_topicuuid_handler(
+    Path((topic_name, topic_uuid)): Path<(String, String)>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>
+) -> impl IntoResponse {
+
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::DeleteTopicUUID{
+        topic_name: topic_name,
+        topic_uuid: topic_uuid,
+        responder: tx_resp };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({})))
+    }
+
+}
 async fn post_topicname_topicuuid_handler(
     Json(value): Json<serde_json::Value>,
     Path((topic_name, topic_uuid)): Path<(String, String)>,
