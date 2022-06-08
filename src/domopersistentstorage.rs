@@ -2,27 +2,29 @@ use rusqlite::{params, Connection, OpenFlags};
 
 use crate::domocache::DomoCacheElement;
 
+use std::path::{Path, PathBuf};
+
 pub trait DomoPersistentStorage {
     fn store(&mut self, element: &DomoCacheElement);
     fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
 }
 
 pub struct SqliteStorage {
-    pub sqlite_file: String,
+    pub sqlite_file: PathBuf,
     pub sqlite_connection: Connection,
 }
 
 impl SqliteStorage {
-    pub fn new(sqlite_file: &str, write_access: bool) -> Self {
+    pub fn new<P: AsRef<Path>>(sqlite_file: P, write_access: bool) -> Self {
         let conn = if write_access == false {
-            match Connection::open_with_flags(sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            match Connection::open_with_flags(&sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
                 Ok(conn) => conn,
                 _ => {
                     panic!("Error while opening the sqlite DB");
                 }
             }
         } else {
-            let conn = match Connection::open(sqlite_file) {
+            let conn = match Connection::open(&sqlite_file) {
                 Ok(conn) => conn,
                 _ => {
                     panic!("Error while opening the sqlite DB");
@@ -48,7 +50,7 @@ impl SqliteStorage {
         };
 
         SqliteStorage {
-            sqlite_file: sqlite_file.to_owned(),
+            sqlite_file: sqlite_file.as_ref().to_path_buf(),
             sqlite_connection: conn,
         }
     }
@@ -113,6 +115,8 @@ impl DomoPersistentStorage for SqliteStorage {
 }
 
 mod tests {
+    use std::path::Path;
+
     use crate::domocache::DomoCacheElement;
     use crate::domopersistentstorage::DomoPersistentStorage;
 
@@ -126,7 +130,7 @@ mod tests {
     #[test]
     fn open_write_non_existent_file() {
         let s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
-        assert_eq!(s.sqlite_file, "/tmp/nkasjkldjad.sqlite");
+        assert_eq!(s.sqlite_file, Path::new("/tmp/nkasjkldjad.sqlite"));
     }
 
     #[test]
