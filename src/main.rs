@@ -6,7 +6,7 @@ mod utils;
 mod websocketmessage;
 
 use serde_json::json;
-use std::env;
+
 use std::error::Error;
 
 use chrono::prelude::*;
@@ -24,11 +24,11 @@ use axum::{
     Json, Router,
 };
 
-use crate::domocache::DomoCache;
+
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::time::Duration;
+
+
 
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -37,7 +37,7 @@ use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoMessag
 use axum::extract::ws::Message;
 use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
-use tokio::time::sleep;
+
 
 use clap::Parser;
 
@@ -312,7 +312,7 @@ async fn delete_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -333,7 +333,7 @@ async fn pub_message(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -357,7 +357,7 @@ async fn post_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -379,7 +379,7 @@ async fn get_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -399,7 +399,7 @@ async fn get_topicname_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 

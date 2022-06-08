@@ -115,16 +115,16 @@ impl DomoPersistentStorage for SqliteStorage {
 }
 
 mod tests {
-    use std::path::Path;
+    
 
-    use crate::domocache::DomoCacheElement;
-    use crate::domopersistentstorage::DomoPersistentStorage;
+    
+    
 
     #[cfg(test)]
     #[test]
     #[should_panic]
     fn open_read_non_existent_file() {
-        let s = super::SqliteStorage::new("/tmp/aaskdjkasdka.sqlite", false);
+        let _s = super::SqliteStorage::new("/tmp/aaskdjkasdka.sqlite", false);
     }
 
     #[test]
