@@ -24,11 +24,8 @@ use axum::{
     Json, Router,
 };
 
-
 use std::net::SocketAddr;
 use std::path::PathBuf;
-
-
 
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -37,7 +34,6 @@ use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoMessag
 use axum::extract::ws::Message;
 use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
-
 
 use clap::Parser;
 
@@ -162,30 +158,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match rest_message {
                     restmessage::RestMessage::GetAll {responder} => {
                         let resp = domo_cache.get_all();
-                        responder.send(Ok(resp));
+                        responder.send(Ok(resp))
                     }
                     restmessage::RestMessage::GetTopicName {topic_name, responder} => {
                         let resp = domo_cache.get_topic_name(&topic_name);
-                        responder.send(resp);
+                        responder.send(resp)
                     }
                     restmessage::RestMessage::GetTopicUUID {topic_name, topic_uuid, responder} => {
                         let resp = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
-                        responder.send(resp);
+                        responder.send(resp)
                     }
                     restmessage::RestMessage::PostTopicUUID {topic_name, topic_uuid, value, responder} => {
                         domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
-                        responder.send(Ok(value));
+                        responder.send(Ok(value))
                     }
                     restmessage::RestMessage::DeleteTopicUUID {topic_name, topic_uuid, responder} => {
                         domo_cache.delete_value(&topic_name, &topic_uuid);
-                        responder.send(Ok(json!({})));
+                        responder.send(Ok(json!({})))
                     }
                     restmessage::RestMessage::PubMessage {value, responder} => {
                         domo_cache.pub_value(value.clone());
-                        responder.send(Ok(value));
+                        responder.send(Ok(value))
                     }
-
-                }
+                }.expect("Cannot send to the channel");
             }
 
             m = domo_cache.cache_event_loop() => {
