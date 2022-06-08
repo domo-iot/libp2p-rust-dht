@@ -26,6 +26,7 @@ use axum::{
 
 use crate::domocache::DomoCache;
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -38,22 +39,31 @@ use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
 use tokio::time::sleep;
 
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+struct Opt {
+    /// Path to a sqlite file
+    #[clap(parse(from_os_str))]
+    sqlite_file: PathBuf,
+
+    /// Use a persistent cache
+    #[clap(parse(try_from_str))]
+    is_persistent_cache: bool,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 3 {
-        println!("Usage: ./domo-libp2p <sqlite_file_path> <persistent_cache>");
-        return Ok(());
-    }
+    let opt = Opt::parse();
 
     let local = Utc::now();
 
     log::info!("Program started at {:?}", local);
 
-    let sqlite_file = &args[1];
-
-    let is_persistent_cache: bool = String::from(&args[2]).parse().unwrap();
+    let Opt {
+        sqlite_file,
+        is_persistent_cache,
+    } = opt;
 
     env_logger::init();
 
