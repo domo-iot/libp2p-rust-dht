@@ -48,6 +48,10 @@ struct Opt {
     /// Use a persistent cache
     #[clap(parse(try_from_str))]
     is_persistent_cache: bool,
+
+    /// Shared key
+    #[clap(parse(try_from_str))]
+    shared_key: String,
 }
 
 #[tokio::main]
@@ -61,13 +65,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let Opt {
         sqlite_file,
         is_persistent_cache,
+        shared_key,
     } = opt;
 
     env_logger::init();
 
     let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
 
-    let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage).await;
+    let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage, shared_key).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 

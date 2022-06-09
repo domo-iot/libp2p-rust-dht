@@ -1,4 +1,4 @@
-use crate::domopersistentstorage::{DomoPersistentStorage};
+use crate::domopersistentstorage::DomoPersistentStorage;
 use crate::utils;
 use chrono::prelude::*;
 use futures::prelude::*;
@@ -418,8 +418,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    pub async fn new(is_persistent_cache: bool, storage: T) -> Self {
-        let swarm = crate::domolibp2p::start().await.unwrap();
+    pub async fn new(is_persistent_cache: bool, storage: T, shared_key: String) -> Self {
+        let swarm = crate::domolibp2p::start(shared_key).await.unwrap();
         let peer_id = swarm.local_peer_id().to_string();
 
         let mut c = DomoCache {
@@ -622,7 +622,7 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
 }
 
 mod tests {
-    use crate::{domocache, DomoCacheOperations, domopersistentstorage};
+    use crate::{domocache, domopersistentstorage, DomoCacheOperations};
 
     #[cfg(test)]
     #[tokio::test]
