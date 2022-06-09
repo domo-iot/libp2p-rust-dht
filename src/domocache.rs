@@ -629,7 +629,9 @@ mod tests {
     async fn test_delete() {
         let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
 
-        let mut domo_cache = super::DomoCache::new(true, storage).await;
+        let shared_key =
+            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
 
         domo_cache.write_value(
             "Domo::Light",
@@ -652,7 +654,9 @@ mod tests {
     #[tokio::test]
     async fn test_write_and_read_key() {
         let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
-        let mut domo_cache = super::DomoCache::new(true, storage).await;
+        let shared_key =
+            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
 
         domo_cache.write_value(
             "Domo::Light",
@@ -670,8 +674,9 @@ mod tests {
     #[tokio::test]
     async fn test_write_twice_same_key() {
         let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
-
-        let mut domo_cache = super::DomoCache::new(true, storage).await;
+        let shared_key =
+            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
 
         domo_cache.write_value(
             "Domo::Light",
@@ -703,8 +708,9 @@ mod tests {
     #[tokio::test]
     async fn test_write_old_timestamp() {
         let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
-
-        let mut domo_cache = super::DomoCache::new(true, storage).await;
+        let shared_key =
+            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
 
         domo_cache.write_value(
             "Domo::Light",
