@@ -35,24 +35,23 @@ use std::time::Duration;
 
 use std::str::FromStr;
 
-pub fn get_ipfs_path() -> Box<Path> {
-    std::env::var("IPFS_PATH")
-        .map(|ipfs_path| Path::new(&ipfs_path).into())
-        .unwrap_or_else(|_| {
-            std::env::var("HOME")
-                .map(|home| Path::new(&home).join(".ipfs"))
-                .expect("could not determine home directory")
-                .into()
-        })
-}
+const KEY_SIZE: usize = 32;
 
-pub fn get_psk(path: Box<Path>) -> std::io::Result<Option<String>> {
-    let swarm_key_file = path.join("shared_key.key");
-
-    match fs::read_to_string(swarm_key_file) {
-        Ok(text) => Ok(Some(text)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(e),
+fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], String> {
+    if s.len() == KEY_SIZE * 2 {
+        let mut r = [0u8; KEY_SIZE];
+        for i in 0..KEY_SIZE {
+            let ret = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16);
+            match ret {
+                Ok(res) => {
+                    r[i] = res;
+                }
+                Err(e) => return Err(String::from("Error while parsing")),
+            }
+        }
+        Ok(r)
+    } else {
+        Err(String::from("Len Error"))
     }
 }
 
@@ -81,7 +80,7 @@ pub fn build_transport(
         .boxed()
 }
 
-pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
+pub async fn start(shared_key: String) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
@@ -91,14 +90,11 @@ pub async fn start() -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     let topic_volatile_data = Topic::new("domo-volatile-data");
     let topic_config = Topic::new("domo-config");
 
-    // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
-    //let transport = development_transport(local_key.clone()).await?;
-
-    let ipfs_path: Box<Path> = get_ipfs_path();
-
-    let psk: Option<PreSharedKey> = get_psk(ipfs_path)?
-        .map(|text| PreSharedKey::from_str(&text))
-        .transpose()?;
+    let arr = parse_hex_key(&shared_key);
+    let psk = match arr {
+        Ok(s) => Some(PreSharedKey::new(s)),
+        Err(e) => panic!("Invalid key"),
+    };
 
     let transport = build_transport(local_key.clone(), psk);
 
