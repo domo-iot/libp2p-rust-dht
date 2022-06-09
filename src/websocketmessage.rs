@@ -1,0 +1,71 @@
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::fmt::{Display, Formatter};
+use std::result;
+
+#[derive(Debug, Clone, Serialize)]
+pub enum AsyncWebSocketDomoMessage {
+    Volatile {
+        value: serde_json::Value,
+    },
+    Persistent {
+        value: serde_json::Value,
+        topic_name: String,
+        topic_uuid: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SyncWebSocketDomoRequest {
+    RequestGetAll,
+    RequestGetTopicName {
+        topic_name: String,
+    },
+    RequestGetTopicUUID {
+        topic_name: String,
+        topic_uuid: String,
+    },
+    RequestDeleteTopicUUID {
+        topic_name: String,
+        topic_uuid: String,
+    },
+    RequestPubMessage {
+        value: serde_json::Value,
+    },
+    RequestPostTopicUUID {
+        topic_name: String,
+        topic_uuid: String,
+        value: serde_json::Value,
+    },
+    Response {
+        value: serde_json::Value,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncWebSocketDomoMessage {
+    pub ws_client_id: String,
+    pub req_id: String,
+    pub request: SyncWebSocketDomoRequest,
+}
+
+#[cfg(test)]
+#[test]
+
+fn serialize_websocketreq() {
+    let r = SyncWebSocketDomoRequest::Response {
+        value: serde_json::json!({"connected": true}),
+    };
+
+    let s = SyncWebSocketDomoRequest::RequestGetAll;
+
+    let p = SyncWebSocketDomoRequest::RequestPubMessage {
+        value: json!({"connected": false}),
+    };
+
+    println!("{}", serde_json::to_string(&r).unwrap());
+
+    println!("{}", serde_json::to_string(&s).unwrap());
+
+    println!("{}", serde_json::to_string(&p).unwrap());
+}

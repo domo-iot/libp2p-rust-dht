@@ -1,60 +1,333 @@
 mod domocache;
 mod domolibp2p;
-mod utils;
 mod domopersistentstorage;
+mod restmessage;
+mod utils;
+mod websocketmessage;
 
-use async_std::{io};
-use futures::{prelude::*, select};
-use serde_json::{json};
+use serde_json::json;
+
 use std::error::Error;
-use std::{env};
 
 use chrono::prelude::*;
 use domocache::DomoCacheOperations;
 
 use domopersistentstorage::SqliteStorage;
 
-#[async_std::main]
-async fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
+use tokio::io::{self, AsyncBufReadExt};
 
-    if args.len() < 3 {
-        println!("Usage: ./domo-libp2p <sqlite_file_path> <persistent_cache>");
-        return Ok(());
-    }
+use axum::{
+    extract::Extension,
+    http::StatusCode,
+    response::IntoResponse,
+    routing::{delete, get, post},
+    Json, Router,
+};
+
+use std::net::SocketAddr;
+use std::path::PathBuf;
+
+use tokio::sync::mpsc::Sender;
+use tokio::sync::{broadcast, mpsc, oneshot};
+
+use crate::websocketmessage::{
+    AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
+};
+use axum::extract::ws::Message;
+use axum::extract::ws::{WebSocket, WebSocketUpgrade};
+use axum::extract::Path;
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+struct Opt {
+    /// Path to a sqlite file
+    #[clap(parse(from_os_str))]
+    sqlite_file: PathBuf,
+
+    /// Use a persistent cache
+    #[clap(parse(try_from_str))]
+    is_persistent_cache: bool,
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let opt = Opt::parse();
 
     let local = Utc::now();
 
     log::info!("Program started at {:?}", local);
 
-    let sqlite_file = &args[1];
-
-    let is_persistent_cache: bool = String::from(&args[2]).parse().unwrap();
+    let Opt {
+        sqlite_file,
+        is_persistent_cache,
+    } = opt;
 
     env_logger::init();
 
     let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
+
     let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage).await;
 
-    let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
+    let mut stdin = io::BufReader::new(io::stdin()).lines();
 
-    // idle loop
+    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+
+    let (tx_rest, mut rx_rest) = mpsc::channel(32);
+
+    let tx_get_all = tx_rest.clone();
+
+    let tx_get_topicname = tx_rest.clone();
+
+    let tx_get_topicname_topicuuid = tx_rest.clone();
+
+    let tx_post_topicname_topicuuid = tx_rest.clone();
+
+    let tx_delete_topicname_topicuuid = tx_rest.clone();
+
+    let tx_pub_message = tx_rest.clone();
+
+    let (async_tx_websocket, mut async_rx_websocket) =
+        broadcast::channel::<AsyncWebSocketDomoMessage>(16);
+
+    let async_tx_websocket_copy = async_tx_websocket.clone();
+
+    let (sync_tx_websocket, mut sync_rx_websocket) =
+        broadcast::channel::<SyncWebSocketDomoMessage>(16);
+
+    let sync_tx_websocket_copy = sync_tx_websocket.clone();
+
+    let app = Router::new()
+        // `GET /` goes to `root`
+        .route(
+            "/get_all",
+            get(get_all_handler).layer(Extension(tx_get_all)),
+        )
+        .route(
+            "/topic_name/:topic_name",
+            get(get_topicname_handler).layer(Extension(tx_get_topicname)),
+        )
+        .route(
+            "/topic_name/:topic_name/topic_uuid/:topic_uuid",
+            get(get_topicname_topicuuid_handler).layer(Extension(tx_get_topicname_topicuuid)),
+        )
+        .route(
+            "/topic_name/:topic_name/topic_uuid/:topic_uuid",
+            post(post_topicname_topicuuid_handler).layer(Extension(tx_post_topicname_topicuuid)),
+        )
+        .route(
+            "/topic_name/:topic_name/topic_uuid/:topic_uuid",
+            delete(delete_topicname_topicuuid_handler)
+                .layer(Extension(tx_delete_topicname_topicuuid)),
+        )
+        .route("/pub", post(pub_message).layer(Extension(tx_pub_message)))
+        .route(
+            "/ws",
+            get(handle_websocket_req)
+                .layer(Extension(async_tx_websocket_copy))
+                .layer(Extension(sync_tx_websocket_copy)),
+        );
+
+    tokio::spawn(async move {
+        axum::Server::bind(&addr)
+            .serve(app.into_make_service())
+            .await
+    });
+
     loop {
-        select! {
-            m = domo_cache.cache_event_loop().fuse() => {
+        tokio::select! {
+            webs_message = sync_rx_websocket.recv() => {
+
+                let message = webs_message.unwrap();
+
+
+                match message.request {
+                    SyncWebSocketDomoRequest::RequestGetAll => {
+
+                        println!("WebSocket RequestGetAll");
+
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: domo_cache.get_all()
+                        };
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+                    SyncWebSocketDomoRequest::RequestGetTopicName { topic_name } => {
+
+                        println!("WebSocket RequestGetTopicName");
+
+                        let ret = domo_cache.get_topic_name(&topic_name);
+
+                        let value = match ret {
+                            Ok(m) => m,
+                            Err(e) => json!({})
+                        };
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: value
+                        };
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestGetTopicUUID { topic_name, topic_uuid } => {
+
+                        println!("WebSocket RequestGetTopicUUID");
+
+                        let ret = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
+                        let value = match ret {
+                            Ok(m) => m,
+                            Err(e) => json!({})
+                        };
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: value
+                        };
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestDeleteTopicUUID { topic_name, topic_uuid } => {
+
+                        let ret = domo_cache.delete_value(&topic_name, &topic_uuid);
+                        println!("WebSocket RequestDeleteTopicUUID");
+
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: json!({})
+                        };
+
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestPostTopicUUID { topic_name, topic_uuid, value } => {
+
+                        println!("WebSocket RequestPostTopicUUID");
+
+                        let ret = domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: value
+                        };
+
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestPubMessage {  value } => {
+
+                        println!("WebSocket RequestPubMessage");
+
+                        let ret = domo_cache.pub_value(value.clone());
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: json!({})
+                        };
+
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    _ => {}
+                }
+
+            }
+            Some(rest_message) = rx_rest.recv() => {
+                println!("Rest request");
+
+                match rest_message {
+                    restmessage::RestMessage::GetAll {responder} => {
+                        let resp = domo_cache.get_all();
+                        responder.send(Ok(resp))
+                    }
+                    restmessage::RestMessage::GetTopicName {topic_name, responder} => {
+                        let resp = domo_cache.get_topic_name(&topic_name);
+                        responder.send(resp)
+                    }
+                    restmessage::RestMessage::GetTopicUUID {topic_name, topic_uuid, responder} => {
+                        let resp = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
+                        responder.send(resp)
+                    }
+                    restmessage::RestMessage::PostTopicUUID {topic_name, topic_uuid, value, responder} => {
+                        domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
+                        responder.send(Ok(value))
+                    }
+                    restmessage::RestMessage::DeleteTopicUUID {topic_name, topic_uuid, responder} => {
+                        domo_cache.delete_value(&topic_name, &topic_uuid);
+                        responder.send(Ok(json!({})))
+                    }
+                    restmessage::RestMessage::PubMessage {value, responder} => {
+                        domo_cache.pub_value(value.clone());
+                        responder.send(Ok(value))
+                    }
+                }.expect("Cannot send to the channel");
+            }
+
+            m = domo_cache.cache_event_loop() => {
                 match m {
                     Ok(domocache::DomoEvent::None) => { },
                     Ok(domocache::DomoEvent::PersistentData(m)) => {
                         println!("Persistent message received {} {}", m.topic_name, m.topic_uuid);
+                        async_tx_websocket.send(
+                            AsyncWebSocketDomoMessage::Persistent {
+                             topic_name: m.topic_name,
+                             topic_uuid: m.topic_uuid,
+                             value: m.value
+                        });
+
                     },
                     Ok(domocache::DomoEvent::VolatileData(m)) => {
                         println!("Volatile message {}", m.to_string());
+
+                        async_tx_websocket.send(
+                            AsyncWebSocketDomoMessage::Volatile {
+                                value: m
+                        });
+
                     }
                     _ => {}
                 }
             },
-            line = stdin.select_next_some() => {
-                let line = line.expect("Stdin error");
+            line = stdin.next_line() => {
+                let line = line?.expect("Stdin error");
                 let mut args = line.split(" ");
 
                 match args.next(){
@@ -132,4 +405,207 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         }
     }
+}
+
+async fn delete_topicname_topicuuid_handler(
+    Path((topic_name, topic_uuid)): Path<(String, String)>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) -> impl IntoResponse {
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::DeleteTopicUUID {
+        topic_name: topic_name,
+        topic_uuid: topic_uuid,
+        responder: tx_resp,
+    };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+    }
+}
+
+async fn pub_message(
+    Json(value): Json<serde_json::Value>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) -> impl IntoResponse {
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::PubMessage {
+        value: value,
+        responder: tx_resp,
+    };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+    }
+}
+
+async fn post_topicname_topicuuid_handler(
+    Json(value): Json<serde_json::Value>,
+    Path((topic_name, topic_uuid)): Path<(String, String)>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) -> impl IntoResponse {
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::PostTopicUUID {
+        topic_name: topic_name,
+        topic_uuid: topic_uuid,
+        value: value,
+        responder: tx_resp,
+    };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+    }
+}
+
+async fn get_topicname_topicuuid_handler(
+    Path((topic_name, topic_uuid)): Path<(String, String)>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) -> impl IntoResponse {
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::GetTopicUUID {
+        topic_name: topic_name,
+        topic_uuid: topic_uuid,
+        responder: tx_resp,
+    };
+
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+    }
+}
+
+async fn get_topicname_handler(
+    Path(topic_name): Path<String>,
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) -> impl IntoResponse {
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::GetTopicName {
+        topic_name: topic_name,
+        responder: tx_resp,
+    };
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    match resp {
+        Ok(resp) => return (StatusCode::OK, Json(resp)),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+    }
+}
+
+async fn get_all_handler(
+    Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+) -> impl IntoResponse {
+    let (tx_resp, rx_resp) = oneshot::channel();
+
+    let m = restmessage::RestMessage::GetAll { responder: tx_resp };
+    tx_rest.send(m).await.unwrap();
+
+    let resp = rx_resp.await.unwrap();
+
+    (StatusCode::OK, Json(resp.unwrap()))
+}
+
+async fn handle_webs(socket: WebSocket) {
+    println!("Here");
+}
+
+async fn handle_websocket_req(
+    ws: WebSocketUpgrade,
+    Extension(async_tx_ws): Extension<broadcast::Sender<AsyncWebSocketDomoMessage>>,
+    Extension(sync_tx_ws): Extension<broadcast::Sender<SyncWebSocketDomoMessage>>,
+) -> impl IntoResponse {
+    // channel for receiving async messages
+    let mut async_rx_ws = async_tx_ws.subscribe();
+
+    // channel for receiving sync messages
+    let mut sync_rx_ws = sync_tx_ws.subscribe();
+
+    ws.on_upgrade(|mut socket| async move {
+        let my_id = utils::get_epoch_ms().to_string();
+
+        loop {
+            tokio::select! {
+                        sync_rx = sync_rx_ws.recv() => {
+
+                            let msg: SyncWebSocketDomoMessage = sync_rx.unwrap();
+
+                            let req = msg.request.clone();
+
+                            match msg.request {
+                                SyncWebSocketDomoRequest::Response { value } => {
+                                    if msg.ws_client_id == my_id {
+                                        socket.send(
+                                        Message::Text(serde_json::to_string(&req).unwrap()))
+                                        .await;
+                                    }
+                                }
+                                _ => {}
+                            }
+
+                        }
+                        Some(msg) = socket.recv() => {
+
+                            match msg.unwrap() {
+                                Message::Text(message) => {
+                                    // parso il messaggio
+                                    println!("Received command {}", message);
+
+                                    let req : SyncWebSocketDomoRequest = serde_json::from_str(&message).unwrap();
+
+                                    let msg = SyncWebSocketDomoMessage {
+                                        ws_client_id: my_id.clone(),
+                                        req_id: my_id.clone(),
+                                        request: req
+                                    };
+
+                                    sync_tx_ws.send(msg);
+
+                                    /*
+                                    sync_tx_ws.send(
+                                        SyncWebSocketDomoMessage::RequestGetAll {
+                                            ws_client_id: my_id.clone(),
+                                            req_id: my_id.clone()
+                                        }
+                                    );
+                                     */
+                                }
+                                Message::Close(_) => {
+                                    return;
+                                }
+                                _ => {}
+                            }
+                        }
+                        async_rx = async_rx_ws.recv() => {
+                             let msg = async_rx.unwrap();
+                             let string_msg = serde_json::to_string(&msg).unwrap();
+                             socket.send(Message::Text(string_msg)).await;
+                        }
+
+            }
+        }
+    })
 }
