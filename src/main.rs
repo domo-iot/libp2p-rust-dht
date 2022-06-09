@@ -10,7 +10,6 @@ use serde_json::json;
 use std::error::Error;
 
 use chrono::prelude::*;
-use domocache::DomoCacheOperations;
 
 use domopersistentstorage::SqliteStorage;
 
@@ -213,7 +212,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     SyncWebSocketDomoRequest::RequestDeleteTopicUUID { topic_name, topic_uuid } => {
 
-                        let ret = domo_cache.delete_value(&topic_name, &topic_uuid);
+                        let ret = domo_cache.delete_value(&topic_name, &topic_uuid).await;
                         println!("WebSocket RequestDeleteTopicUUID");
 
 
@@ -235,7 +234,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         println!("WebSocket RequestPostTopicUUID");
 
-                        let ret = domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
+                        let ret = domo_cache.write_value(&topic_name, &topic_uuid, value.clone()).await;
 
                         let resp = SyncWebSocketDomoRequest::Response {
                             value: value
@@ -255,10 +254,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         println!("WebSocket RequestPubMessage");
 
-                        let ret = domo_cache.pub_value(value.clone());
+                        let ret = domo_cache.pub_value(value.clone()).await;
 
                         let resp = SyncWebSocketDomoRequest::Response {
-                            value: json!({})
+                            value: value
                         };
 
 
@@ -292,15 +291,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         responder.send(resp)
                     }
                     restmessage::RestMessage::PostTopicUUID {topic_name, topic_uuid, value, responder} => {
-                        domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
+                        domo_cache.write_value(&topic_name, &topic_uuid, value.clone()).await;
                         responder.send(Ok(value))
                     }
                     restmessage::RestMessage::DeleteTopicUUID {topic_name, topic_uuid, responder} => {
-                        domo_cache.delete_value(&topic_name, &topic_uuid);
+                        domo_cache.delete_value(&topic_name, &topic_uuid).await;
                         responder.send(Ok(json!({})))
                     }
                     restmessage::RestMessage::PubMessage {value, responder} => {
-                        domo_cache.pub_value(value.clone());
+                        domo_cache.pub_value(value.clone()).await;
                         responder.send(Ok(value))
                     }
                 }.expect("Cannot send to the channel");
@@ -315,7 +314,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             AsyncWebSocketDomoMessage::Persistent {
                              topic_name: m.topic_name,
                              topic_uuid: m.topic_uuid,
-                             value: m.value
+                             value: m.value,
+                             deleted: m.deleted
                         });
 
                     },
@@ -356,7 +356,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             let topic_name= topic_name.unwrap();
                             let topic_uuid= topic_uuid.unwrap();
 
-                            domo_cache.delete_value(topic_name, topic_uuid);
+                            domo_cache.delete_value(topic_name, topic_uuid).await;
                         }
 
 
@@ -370,7 +370,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         let val = json!({ "payload": value});
 
-                        domo_cache.pub_value(val);
+                        domo_cache.pub_value(val).await;
 
                     }
                     Some("PUT") => {
@@ -391,7 +391,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                             let val = json!({ "payload": value});
 
-                            domo_cache.write_value(topic_name, topic_uuid, val);
+                            domo_cache.write_value(topic_name, topic_uuid, val).await;
                         }
                     },
                     _ => {

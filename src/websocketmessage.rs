@@ -12,6 +12,7 @@ pub enum AsyncWebSocketDomoMessage {
         value: serde_json::Value,
         topic_name: String,
         topic_uuid: String,
+        deleted: bool,
     },
 }
 
@@ -48,4 +49,3 @@ pub struct SyncWebSocketDomoMessage {
     pub req_id: String,
     pub request: SyncWebSocketDomoRequest,
 }
-
