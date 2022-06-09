@@ -115,10 +115,10 @@ impl DomoPersistentStorage for SqliteStorage {
 }
 
 mod tests {
-    
-
-    
-    
+    use std::path::Path;
+    use crate::domocache::DomoCacheElement;
+    use crate::domopersistentstorage;
+    use crate::domopersistentstorage::DomoPersistentStorage;
 
     #[cfg(test)]
     #[test]
@@ -135,14 +135,14 @@ mod tests {
 
     #[test]
     fn test_initial_get_all_element() {
-        let mut s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
+        let mut s = domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
         let v = s.get_all_elements();
         assert_eq!(v.len(), 0);
     }
 
     #[test]
     fn test_store() {
-        let mut s = super::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
+        let mut s = domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
 
         let m = DomoCacheElement {
             topic_name: "a".to_string(),

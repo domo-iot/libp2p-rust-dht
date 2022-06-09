@@ -622,13 +622,12 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
 }
 
 mod tests {
-    
-    
+    use crate::{domocache, DomoCacheOperations, domopersistentstorage};
 
     #[cfg(test)]
     #[tokio::test]
     async fn test_delete() {
-        let storage = super::SqliteStorage::new("./prova.sqlite", true);
+        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
 
         let mut domo_cache = super::DomoCache::new(true, storage).await;
 
@@ -652,7 +651,7 @@ mod tests {
     #[cfg(test)]
     #[tokio::test]
     async fn test_write_and_read_key() {
-        let storage = super::SqliteStorage::new("./prova.sqlite", true);
+        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
         let mut domo_cache = super::DomoCache::new(true, storage).await;
 
         domo_cache.write_value(
@@ -670,7 +669,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_twice_same_key() {
-        let storage = super::SqliteStorage::new("./prova.sqlite", true);
+        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
 
         let mut domo_cache = super::DomoCache::new(true, storage).await;
 
@@ -703,7 +702,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_old_timestamp() {
-        let storage = super::SqliteStorage::new("./prova.sqlite", true);
+        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
 
         let mut domo_cache = super::DomoCache::new(true, storage).await;
 
