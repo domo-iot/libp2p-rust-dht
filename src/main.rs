@@ -32,7 +32,9 @@ use std::time::Duration;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
-use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage};
+use crate::websocketmessage::{
+    AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
+};
 use axum::extract::ws::Message;
 use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
@@ -129,19 +131,135 @@ async fn main() -> Result<(), Box<dyn Error>> {
     loop {
         tokio::select! {
             webs_message = sync_rx_websocket.recv() => {
-                println!("Sync websocket req");
 
-                match webs_message.unwrap() {
-                    SyncWebSocketDomoMessage::RequestGetAll { ws_client_id, req_id} => {
+                let message = webs_message.unwrap();
 
-                        let r = SyncWebSocketDomoMessage::Response {
-                            ws_client_id: ws_client_id,
-                            req_id: req_id,
+
+                match message.request {
+                    SyncWebSocketDomoRequest::RequestGetAll => {
+
+                        println!("WebSocket RequestGetAll");
+
+
+                        let resp = SyncWebSocketDomoRequest::Response {
                             value: domo_cache.get_all()
+                        };
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
                         };
 
                         sync_tx_websocket.send(r);
                     }
+                    SyncWebSocketDomoRequest::RequestGetTopicName { topic_name } => {
+
+                        println!("WebSocket RequestGetTopicName");
+
+                        let ret = domo_cache.get_topic_name(&topic_name);
+
+                        let value = match ret {
+                            Ok(m) => m,
+                            Err(e) => json!({})
+                        };
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: value
+                        };
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestGetTopicUUID { topic_name, topic_uuid } => {
+
+                        println!("WebSocket RequestGetTopicUUID");
+
+                        let ret = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
+                        let value = match ret {
+                            Ok(m) => m,
+                            Err(e) => json!({})
+                        };
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: value
+                        };
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestDeleteTopicUUID { topic_name, topic_uuid } => {
+
+                        let ret = domo_cache.delete_value(&topic_name, &topic_uuid);
+                        println!("WebSocket RequestDeleteTopicUUID");
+
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: json!({})
+                        };
+
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestPostTopicUUID { topic_name, topic_uuid, value } => {
+
+                        println!("WebSocket RequestPostTopicUUID");
+
+                        let ret = domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: value
+                        };
+
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
+                    SyncWebSocketDomoRequest::RequestPubMessage {  value } => {
+
+                        println!("WebSocket RequestPubMessage");
+
+                        let ret = domo_cache.pub_value(value.clone());
+
+                        let resp = SyncWebSocketDomoRequest::Response {
+                            value: json!({})
+                        };
+
+
+                        let r = SyncWebSocketDomoMessage {
+                            ws_client_id: message.ws_client_id,
+                            req_id: message.req_id,
+                            request: resp
+                        };
+
+                        sync_tx_websocket.send(r);
+                    }
+
                     _ => {}
                 }
 
@@ -427,50 +545,48 @@ async fn handle_websocket_req(
         loop {
             tokio::select! {
                         sync_rx = sync_rx_ws.recv() => {
-                            let msg = sync_rx.unwrap();
-                            match msg {
-                                    SyncWebSocketDomoMessage::Response {
-                                        value,
-                                        ws_client_id,
-                                        req_id
-                                    } => {
-                                        if ws_client_id == my_id {
-                                                socket.send(Message::Text("Sync message".to_string())).await;
-                                        }
+
+                            let msg: SyncWebSocketDomoMessage = sync_rx.unwrap();
+
+                            let req = msg.request.clone();
+
+                            match msg.request {
+                                SyncWebSocketDomoRequest::Response { value } => {
+                                    if msg.ws_client_id == my_id {
+                                        socket.send(
+                                        Message::Text(serde_json::to_string(&req).unwrap()))
+                                        .await;
                                     }
-                                    _=> {}
+                                }
+                                _ => {}
                             }
 
-                        }
-                        async_rx = async_rx_ws.recv() => {
-                             let msg = async_rx.unwrap();
-                             match msg {
-                                AsyncWebSocketDomoMessage::Volatile {value} => {
-                                        println!("Volatile");
-                                        socket.send(Message::Text(value.to_string())).await;
-                                }
-                                AsyncWebSocketDomoMessage::Persistent {topic_name, topic_uuid, value} => {
-                                        println!("Persistent");
-                                        let m = json!({
-                                            "topic_name": topic_name,
-                                            "topic_uuid": topic_uuid,
-                                            "value": value
-                                        });
-                                        socket.send(Message::Text(m.to_string())).await;
-                                }
-                             }
                         }
                         Some(msg) = socket.recv() => {
 
                             match msg.unwrap() {
                                 Message::Text(message) => {
+                                    // parso il messaggio
                                     println!("Received command {}", message);
+
+                                    let req : SyncWebSocketDomoRequest = serde_json::from_str(&message).unwrap();
+
+                                    let msg = SyncWebSocketDomoMessage {
+                                        ws_client_id: my_id.clone(),
+                                        req_id: my_id.clone(),
+                                        request: req
+                                    };
+
+                                    sync_tx_ws.send(msg);
+
+                                    /*
                                     sync_tx_ws.send(
                                         SyncWebSocketDomoMessage::RequestGetAll {
                                             ws_client_id: my_id.clone(),
                                             req_id: my_id.clone()
                                         }
                                     );
+                                     */
                                 }
                                 Message::Close(_) => {
                                     return;
@@ -478,6 +594,12 @@ async fn handle_websocket_req(
                                 _ => {}
                             }
                         }
+                        async_rx = async_rx_ws.recv() => {
+                             let msg = async_rx.unwrap();
+                             let string_msg = serde_json::to_string(&msg).unwrap();
+                             socket.send(Message::Text(string_msg)).await;
+                        }
+
             }
         }
     })
