@@ -49,23 +49,3 @@ pub struct SyncWebSocketDomoMessage {
     pub request: SyncWebSocketDomoRequest,
 }
 
-#[cfg(test)]
-#[test]
-
-fn serialize_websocketreq() {
-    let r = SyncWebSocketDomoRequest::Response {
-        value: serde_json::json!({"connected": true}),
-    };
-
-    let s = SyncWebSocketDomoRequest::RequestGetAll;
-
-    let p = SyncWebSocketDomoRequest::RequestPubMessage {
-        value: json!({"connected": false}),
-    };
-
-    println!("{}", serde_json::to_string(&r).unwrap());
-
-    println!("{}", serde_json::to_string(&s).unwrap());
-
-    println!("{}", serde_json::to_string(&p).unwrap());
-}
