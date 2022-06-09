@@ -1,4 +1,4 @@
-use crate::domopersistentstorage::{DomoPersistentStorage, SqliteStorage};
+use crate::domopersistentstorage::{DomoPersistentStorage};
 use crate::utils;
 use chrono::prelude::*;
 use futures::prelude::*;
@@ -622,8 +622,8 @@ impl<T: DomoPersistentStorage> DomoCacheOperations for DomoCache<T> {
 }
 
 mod tests {
-    use super::DomoCacheOperations;
-    use crate::domocache::DomoCacheElement;
+    
+    
 
     #[cfg(test)]
     #[tokio::test]
@@ -638,7 +638,7 @@ mod tests {
             serde_json::json!({ "connected": true}),
         );
 
-        let v = domo_cache
+        let _v = domo_cache
             .read_cache_element("Domo::Light", "luce-delete")
             .unwrap();
 

@@ -6,7 +6,7 @@ mod utils;
 mod websocketmessage;
 
 use serde_json::json;
-use std::env;
+
 use std::error::Error;
 
 use chrono::prelude::*;
@@ -24,10 +24,8 @@ use axum::{
     Json, Router,
 };
 
-use crate::domocache::DomoCache;
 use std::net::SocketAddr;
-use std::sync::Arc;
-use std::time::Duration;
+use std::path::PathBuf;
 
 use tokio::sync::mpsc::Sender;
 use tokio::sync::{broadcast, mpsc, oneshot};
@@ -38,24 +36,32 @@ use crate::websocketmessage::{
 use axum::extract::ws::Message;
 use axum::extract::ws::{WebSocket, WebSocketUpgrade};
 use axum::extract::Path;
-use tokio::time::sleep;
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+struct Opt {
+    /// Path to a sqlite file
+    #[clap(parse(from_os_str))]
+    sqlite_file: PathBuf,
+
+    /// Use a persistent cache
+    #[clap(parse(try_from_str))]
+    is_persistent_cache: bool,
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 3 {
-        println!("Usage: ./domo-libp2p <sqlite_file_path> <persistent_cache>");
-        return Ok(());
-    }
+    let opt = Opt::parse();
 
     let local = Utc::now();
 
     log::info!("Program started at {:?}", local);
 
-    let sqlite_file = &args[1];
-
-    let is_persistent_cache: bool = String::from(&args[2]).parse().unwrap();
+    let Opt {
+        sqlite_file,
+        is_persistent_cache,
+    } = opt;
 
     env_logger::init();
 
@@ -270,30 +276,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 match rest_message {
                     restmessage::RestMessage::GetAll {responder} => {
                         let resp = domo_cache.get_all();
-                        responder.send(Ok(resp));
+                        responder.send(Ok(resp))
                     }
                     restmessage::RestMessage::GetTopicName {topic_name, responder} => {
                         let resp = domo_cache.get_topic_name(&topic_name);
-                        responder.send(resp);
+                        responder.send(resp)
                     }
                     restmessage::RestMessage::GetTopicUUID {topic_name, topic_uuid, responder} => {
                         let resp = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
-                        responder.send(resp);
+                        responder.send(resp)
                     }
                     restmessage::RestMessage::PostTopicUUID {topic_name, topic_uuid, value, responder} => {
                         domo_cache.write_value(&topic_name, &topic_uuid, value.clone());
-                        responder.send(Ok(value));
+                        responder.send(Ok(value))
                     }
                     restmessage::RestMessage::DeleteTopicUUID {topic_name, topic_uuid, responder} => {
                         domo_cache.delete_value(&topic_name, &topic_uuid);
-                        responder.send(Ok(json!({})));
+                        responder.send(Ok(json!({})))
                     }
                     restmessage::RestMessage::PubMessage {value, responder} => {
                         domo_cache.pub_value(value.clone());
-                        responder.send(Ok(value));
+                        responder.send(Ok(value))
                     }
-
-                }
+                }.expect("Cannot send to the channel");
             }
 
             m = domo_cache.cache_event_loop() => {
@@ -420,7 +425,7 @@ async fn delete_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -441,7 +446,7 @@ async fn pub_message(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -465,7 +470,7 @@ async fn post_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -487,7 +492,7 @@ async fn get_topicname_topicuuid_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -507,7 +512,7 @@ async fn get_topicname_handler(
 
     match resp {
         Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
