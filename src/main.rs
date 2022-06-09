@@ -215,19 +215,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let ret = domo_cache.delete_value(&topic_name, &topic_uuid).await;
                         println!("WebSocket RequestDeleteTopicUUID");
 
-
-                        let resp = SyncWebSocketDomoRequest::Response {
-                            value: json!({})
-                        };
-
-
-                        let r = SyncWebSocketDomoMessage {
-                            ws_client_id: message.ws_client_id,
-                            req_id: message.req_id,
-                            request: resp
-                        };
-
-                        sync_tx_websocket.send(r);
                     }
 
                     SyncWebSocketDomoRequest::RequestPostTopicUUID { topic_name, topic_uuid, value } => {
@@ -236,38 +223,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         let ret = domo_cache.write_value(&topic_name, &topic_uuid, value.clone()).await;
 
-                        let resp = SyncWebSocketDomoRequest::Response {
-                            value: value
-                        };
-
-
-                        let r = SyncWebSocketDomoMessage {
-                            ws_client_id: message.ws_client_id,
-                            req_id: message.req_id,
-                            request: resp
-                        };
-
-                        sync_tx_websocket.send(r);
                     }
 
                     SyncWebSocketDomoRequest::RequestPubMessage {  value } => {
 
                         println!("WebSocket RequestPubMessage");
-
                         let ret = domo_cache.pub_value(value.clone()).await;
-
-                        let resp = SyncWebSocketDomoRequest::Response {
-                            value: value
-                        };
-
-
-                        let r = SyncWebSocketDomoMessage {
-                            ws_client_id: message.ws_client_id,
-                            req_id: message.req_id,
-                            request: resp
-                        };
-
-                        sync_tx_websocket.send(r);
                     }
 
                     _ => {}
@@ -589,14 +550,6 @@ async fn handle_websocket_req(
 
                                     sync_tx_ws.send(msg);
 
-                                    /*
-                                    sync_tx_ws.send(
-                                        SyncWebSocketDomoMessage::RequestGetAll {
-                                            ws_client_id: my_id.clone(),
-                                            req_id: my_id.clone()
-                                        }
-                                    );
-                                     */
                                 }
                                 Message::Close(_) => {
                                     return;
