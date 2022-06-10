@@ -134,6 +134,8 @@ mod tests {
 
     #[test]
     fn test_initial_get_all_element() {
+        use super::DomoPersistentStorage;
+
         let mut s =
             crate::domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
         let v = s.get_all_elements();
@@ -142,6 +144,7 @@ mod tests {
 
     #[test]
     fn test_store() {
+        use super::DomoPersistentStorage;
         let mut s =
             crate::domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
 

@@ -51,6 +51,10 @@ struct Opt {
     /// Shared key
     #[clap(parse(try_from_str))]
     shared_key: String,
+
+    /// HTTP port
+    #[clap(parse(try_from_str))]
+    http_port: u16,
 }
 
 #[tokio::main]
@@ -65,6 +69,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         sqlite_file,
         is_persistent_cache,
         shared_key,
+        http_port,
     } = opt;
 
     env_logger::init();
@@ -75,7 +80,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([127, 0, 0, 1], http_port));
 
     let (tx_rest, mut rx_rest) = mpsc::channel(32);
 
