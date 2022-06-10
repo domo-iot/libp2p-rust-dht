@@ -29,11 +29,7 @@ use libp2p::{
 
 use libp2p::swarm::SwarmBuilder;
 use std::error::Error;
-use std::fs;
-use std::path::Path;
 use std::time::Duration;
-
-use std::str::FromStr;
 
 const KEY_SIZE: usize = 32;
 
@@ -46,7 +42,7 @@ fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], String> {
                 Ok(res) => {
                     r[i] = res;
                 }
-                Err(e) => return Err(String::from("Error while parsing")),
+                Err(_e) => return Err(String::from("Error while parsing")),
             }
         }
         Ok(r)
@@ -93,7 +89,7 @@ pub async fn start(shared_key: String) -> Result<Swarm<DomoBehaviour>, Box<dyn E
     let arr = parse_hex_key(&shared_key);
     let psk = match arr {
         Ok(s) => Some(PreSharedKey::new(s)),
-        Err(e) => panic!("Invalid key"),
+        Err(_e) => panic!("Invalid key"),
     };
 
     let transport = build_transport(local_key.clone(), psk);

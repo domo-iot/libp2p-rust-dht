@@ -54,7 +54,7 @@ impl Display for DomoCacheElement {
             peer_id: {})",
             self.topic_name,
             self.topic_uuid,
-            self.value.to_string(),
+            self.value,
             self.deleted,
             self.publication_timestamp,
             self.publisher_peer_id
@@ -118,11 +118,11 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 log::info!("New message received");
                 // since a new message arrived, we invalidate peers cache states
                 self.peers_caches_state.clear();
-                return Ok(DomoEvent::PersistentData(m));
+                Ok(DomoEvent::PersistentData(m))
             }
             _ => {
                 log::info!("Old message received");
-                return Ok(DomoEvent::None);
+                Ok(DomoEvent::None)
             }
         }
     }
@@ -134,20 +134,20 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         local_hash: u64,
         peers_caches_state: &BTreeMap<String, DomoCacheStateMessage>,
     ) -> (bool, bool) {
-        let fil: Vec<u64> = peers_caches_state
+        // se ci sono hashes diversi dal mio non è consistente
+        // verifico se sono il leader per l'hash
+
+        if peers_caches_state
             .iter()
             .filter(|(_, data)| {
                 (data.cache_hash != local_hash)
                     && (data.publication_timestamp
                         > (utils::get_epoch_ms() - (1000 * 2 * u128::from(SEND_CACHE_HASH_PERIOD))))
             })
-            .map(|(_, data)| data.cache_hash)
-            .collect();
-
-        // se ci sono hashes diversi dal mio non è consistente
-        // verifico se sono il leader per l'hash
-        if fil.len() > 0 {
-            let fil2: Vec<String> = peers_caches_state
+            .count()
+            > 0
+        {
+            if peers_caches_state
                 .iter()
                 .filter(|(peer_id, data)| {
                     (data.cache_hash == local_hash)
@@ -156,10 +156,9 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                             > (utils::get_epoch_ms()
                                 - (1000 * 2 * u128::from(SEND_CACHE_HASH_PERIOD))))
                 })
-                .map(|(peer_id, _data)| String::from(peer_id))
-                .collect();
-
-            if fil2.len() > 0 {
+                .count()
+                > 0
+            {
                 // non sono il leader dello hash
                 return (false, false);
             } else {
@@ -175,16 +174,12 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     pub fn get_topic_uuid(&self, topic_name: &str, topic_uuid: &str) -> Result<Value, String> {
         let ret = self.read_cache_element(topic_name, topic_uuid);
         match ret {
-            None => {
-                return Err(String::from("TopicName TopicUUID not found"));
-            }
-            Some(cache_element) => {
-                return Ok(serde_json::json!({
-                            "topic_name": topic_name.clone(),
-                            "topic_uuid": topic_uuid.clone(),
-                            "value": cache_element.value.clone()
-                }));
-            }
+            None => Err(String::from("TopicName TopicUUID not found")),
+            Some(cache_element) => Ok(serde_json::json!({
+                        "topic_name": topic_name.to_owned(),
+                        "topic_uuid": topic_uuid.to_owned(),
+                        "value": cache_element.value
+            })),
         }
     }
 
@@ -193,21 +188,19 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let mut ret: Value = serde_json::from_str(s).unwrap();
 
         match self.cache.get(topic_name) {
-            None => {
-                return Err(String::from("topic_name not found"));
-            }
+            None => Err(String::from("topic_name not found")),
             Some(topic_name_map) => {
                 for (topic_uuid, cache_element) in topic_name_map.iter() {
-                    if cache_element.deleted == false {
+                    if !cache_element.deleted {
                         let val = serde_json::json!({
-                            "topic_name": topic_name.clone(),
-                            "topic_uuid": topic_uuid.clone(),
+                            "topic_name": topic_name.to_owned(),
+                            "topic_uuid": topic_uuid.to_owned(),
                             "value": cache_element.value.clone()
                         });
                         ret.as_array_mut().unwrap().push(val);
                     }
                 }
-                return Ok(ret);
+                Ok(ret)
             }
         }
     }
@@ -218,7 +211,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
         for (topic_name, topic_name_map) in self.cache.iter() {
             for (topic_uuid, cache_element) in topic_name_map.iter() {
-                if cache_element.deleted == false {
+                if !cache_element.deleted {
                     let val = serde_json::json!({
                     "topic_name": topic_name.clone(),
                     "topic_uuid": topic_uuid.clone(),
@@ -405,7 +398,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let swarm = crate::domolibp2p::start(shared_key).await.unwrap();
         let peer_id = swarm.local_peer_id().to_string();
 
-        let (client_tx_channel, mut client_rx_channel) = mpsc::channel::<DomoEvent>(32);
+        let (client_tx_channel, client_rx_channel) = mpsc::channel::<DomoEvent>(32);
 
         let mut c = DomoCache {
             is_persistent_cache,
@@ -413,11 +406,11 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             local_peer_id: peer_id,
             publish_cache_counter: 4,
             last_cache_repub_timestamp: 0,
-            storage: storage,
+            storage,
             cache: BTreeMap::new(),
             peers_caches_state: BTreeMap::new(),
-            client_tx_channel: client_tx_channel,
-            client_rx_channel: client_rx_channel,
+            client_tx_channel,
+            client_rx_channel,
         };
 
         // popolo la mia cache con il contenuto dello sqlite
@@ -469,7 +462,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         {
             log::info!("Publish error: {:?}", e);
         }
-        if republished == false {
+        if !republished {
             // signal a volatile pub by part of clients
             let ev = DomoEvent::PersistentData(m);
             self.client_tx_channel.send(ev).await.unwrap();
@@ -481,8 +474,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             let mut first = true;
 
             for (_, value) in topic_name_map.iter() {
-                if value.deleted == false {
-                    if first == true {
+                if !value.deleted {
+                    if first {
                         println!("TopicName {} ", topic_name);
                         first = false;
                     }
@@ -607,10 +600,10 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         match value {
             Some(topic_map) => match topic_map.get(topic_uuid) {
                 Some(element) => {
-                    if element.deleted == false {
-                        return Some((*element).clone());
+                    if !element.deleted {
+                        Some((*element).clone())
                     } else {
-                        return None;
+                        None
                     }
                 }
                 None => None,
@@ -621,12 +614,11 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 }
 
 mod tests {
-    use crate::domopersistentstorage;
 
     #[cfg(test)]
     #[tokio::test]
     async fn test_delete() {
-        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
@@ -654,7 +646,7 @@ mod tests {
     #[cfg(test)]
     #[tokio::test]
     async fn test_write_and_read_key() {
-        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
@@ -676,7 +668,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_twice_same_key() {
-        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
@@ -714,7 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_old_timestamp() {
-        let storage = domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
