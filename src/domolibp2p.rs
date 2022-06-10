@@ -76,7 +76,10 @@ pub fn build_transport(
         .boxed()
 }
 
-pub async fn start(shared_key: String) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
+pub async fn start(
+    shared_key: String,
+    loopback_only: bool,
+) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
@@ -147,8 +150,13 @@ pub async fn start(shared_key: String) -> Result<Swarm<DomoBehaviour>, Box<dyn E
             .build()
     };
 
-    // Listen on all interfaces and whatever port the OS assigns.
-    swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+    if !loopback_only {
+        // Listen on all interfaces and whatever port the OS assigns.
+        swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+    } else {
+        // Listen only on loopack interface
+        swarm.listen_on("/ip4/127.0.0.1/tcp/0".parse()?)?;
+    }
 
     Ok(swarm)
 }
