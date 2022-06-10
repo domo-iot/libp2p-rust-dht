@@ -48,13 +48,17 @@ struct Opt {
     #[clap(parse(try_from_str))]
     is_persistent_cache: bool,
 
-    /// Shared key
+    /// 32 bytes long shared key in hex format
     #[clap(parse(try_from_str))]
     shared_key: String,
 
     /// HTTP port
     #[clap(parse(try_from_str))]
     http_port: u16,
+
+    /// use only loopback iface for libp2p
+    #[clap(parse(try_from_str))]
+    loopback_only: bool,
 }
 
 #[tokio::main]
@@ -70,13 +74,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
         is_persistent_cache,
         shared_key,
         http_port,
+        loopback_only,
     } = opt;
 
     env_logger::init();
 
     let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
 
-    let mut domo_cache = domocache::DomoCache::new(is_persistent_cache, storage, shared_key).await;
+    let mut domo_cache =
+        domocache::DomoCache::new(is_persistent_cache, storage, shared_key, loopback_only).await;
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 

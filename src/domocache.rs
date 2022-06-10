@@ -394,8 +394,15 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    pub async fn new(is_persistent_cache: bool, storage: T, shared_key: String) -> Self {
-        let swarm = crate::domolibp2p::start(shared_key).await.unwrap();
+    pub async fn new(
+        is_persistent_cache: bool,
+        storage: T,
+        shared_key: String,
+        loopback_only: bool,
+    ) -> Self {
+        let swarm = crate::domolibp2p::start(shared_key, loopback_only)
+            .await
+            .unwrap();
         let peer_id = swarm.local_peer_id().to_string();
 
         let (client_tx_channel, client_rx_channel) = mpsc::channel::<DomoEvent>(32);
@@ -622,7 +629,7 @@ mod tests {
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
 
         domo_cache
             .write_value(
@@ -649,7 +656,7 @@ mod tests {
         let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
 
         domo_cache
             .write_value(
@@ -671,7 +678,7 @@ mod tests {
         let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
 
         domo_cache
             .write_value(
@@ -709,7 +716,7 @@ mod tests {
         let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let mut domo_cache = super::DomoCache::new(true, storage, shared_key).await;
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
 
         domo_cache
             .write_value(
