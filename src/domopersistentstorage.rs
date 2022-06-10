@@ -16,7 +16,7 @@ pub struct SqliteStorage {
 
 impl SqliteStorage {
     pub fn new<P: AsRef<Path>>(sqlite_file: P, write_access: bool) -> Self {
-        let conn = if write_access == false {
+        let conn = if !write_access {
             match Connection::open_with_flags(&sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
                 Ok(conn) => conn,
                 _ => {
@@ -115,10 +115,6 @@ impl DomoPersistentStorage for SqliteStorage {
 }
 
 mod tests {
-    use std::path::Path;
-    use crate::domocache::DomoCacheElement;
-    use crate::domopersistentstorage;
-    use crate::domopersistentstorage::DomoPersistentStorage;
 
     #[cfg(test)]
     #[test]
@@ -130,21 +126,26 @@ mod tests {
     #[test]
     fn open_write_non_existent_file() {
         let s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
-        assert_eq!(s.sqlite_file, Path::new("/tmp/nkasjkldjad.sqlite"));
+        assert_eq!(
+            s.sqlite_file,
+            std::path::Path::new("/tmp/nkasjkldjad.sqlite")
+        );
     }
 
     #[test]
     fn test_initial_get_all_element() {
-        let mut s = domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
+        let mut s =
+            crate::domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
         let v = s.get_all_elements();
         assert_eq!(v.len(), 0);
     }
 
     #[test]
     fn test_store() {
-        let mut s = domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
+        let mut s =
+            crate::domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
 
-        let m = DomoCacheElement {
+        let m = crate::domocache::DomoCacheElement {
             topic_name: "a".to_string(),
             topic_uuid: "a".to_string(),
             value: Default::default(),

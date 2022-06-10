@@ -33,7 +33,7 @@ use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
 use axum::extract::ws::Message;
-use axum::extract::ws::{WebSocket, WebSocketUpgrade};
+use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::Path;
 
 use clap::Parser;
@@ -91,7 +91,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tx_pub_message = tx_rest.clone();
 
-    let (async_tx_websocket, mut async_rx_websocket) =
+    let (async_tx_websocket, mut _async_rx_websocket) =
         broadcast::channel::<AsyncWebSocketDomoMessage>(16);
 
     let async_tx_websocket_copy = async_tx_websocket.clone();
@@ -161,7 +161,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             request: resp
                         };
 
-                        sync_tx_websocket.send(r);
+                        let _ret = sync_tx_websocket.send(r);
                     }
                     SyncWebSocketDomoRequest::RequestGetTopicName { topic_name } => {
 
@@ -171,11 +171,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         let value = match ret {
                             Ok(m) => m,
-                            Err(e) => json!({})
+                            Err(_e) => json!({})
                         };
 
                         let resp = SyncWebSocketDomoRequest::Response {
-                            value: value
+                            value
                         };
 
                         let r = SyncWebSocketDomoMessage {
@@ -184,7 +184,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             request: resp
                         };
 
-                        sync_tx_websocket.send(r);
+                        let _ret = sync_tx_websocket.send(r);
                     }
 
                     SyncWebSocketDomoRequest::RequestGetTopicUUID { topic_name, topic_uuid } => {
@@ -194,11 +194,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                         let ret = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
                         let value = match ret {
                             Ok(m) => m,
-                            Err(e) => json!({})
+                            Err(_e) => json!({})
                         };
 
                         let resp = SyncWebSocketDomoRequest::Response {
-                            value: value
+                            value
                         };
 
                         let r = SyncWebSocketDomoMessage {
@@ -207,12 +207,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
                             request: resp
                         };
 
-                        sync_tx_websocket.send(r);
+                        let _ret = sync_tx_websocket.send(r);
                     }
 
                     SyncWebSocketDomoRequest::RequestDeleteTopicUUID { topic_name, topic_uuid } => {
 
-                        let ret = domo_cache.delete_value(&topic_name, &topic_uuid).await;
+                        let _ret = domo_cache.delete_value(&topic_name, &topic_uuid).await;
                         println!("WebSocket RequestDeleteTopicUUID");
 
                     }
@@ -221,14 +221,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                         println!("WebSocket RequestPostTopicUUID");
 
-                        let ret = domo_cache.write_value(&topic_name, &topic_uuid, value.clone()).await;
+                        let _ret = domo_cache.write_value(&topic_name, &topic_uuid, value.clone()).await;
 
                     }
 
                     SyncWebSocketDomoRequest::RequestPubMessage {  value } => {
 
                         println!("WebSocket RequestPubMessage");
-                        let ret = domo_cache.pub_value(value.clone()).await;
+                        let _ret = domo_cache.pub_value(value.clone()).await;
                     }
 
                     _ => {}
@@ -271,7 +271,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
                     Ok(domocache::DomoEvent::None) => { },
                     Ok(domocache::DomoEvent::PersistentData(m)) => {
                         println!("Persistent message received {} {}", m.topic_name, m.topic_uuid);
-                        async_tx_websocket.send(
+                        let _ret = async_tx_websocket.send(
                             AsyncWebSocketDomoMessage::Persistent {
                              topic_name: m.topic_name,
                              topic_uuid: m.topic_uuid,
@@ -281,9 +281,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                     },
                     Ok(domocache::DomoEvent::VolatileData(m)) => {
-                        println!("Volatile message {}", m.to_string());
+                        println!("Volatile message {}", m);
 
-                        async_tx_websocket.send(
+                        let _ret = async_tx_websocket.send(
                             AsyncWebSocketDomoMessage::Volatile {
                                 value: m
                         });
@@ -294,7 +294,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             },
             line = stdin.next_line() => {
                 let line = line?.expect("Stdin error");
-                let mut args = line.split(" ");
+                let mut args = line.split(' ');
 
                 match args.next(){
                     Some("HASH") => {
@@ -380,8 +380,8 @@ async fn delete_topicname_topicuuid_handler(
     let (tx_resp, rx_resp) = oneshot::channel();
 
     let m = restmessage::RestMessage::DeleteTopicUUID {
-        topic_name: topic_name,
-        topic_uuid: topic_uuid,
+        topic_name,
+        topic_uuid,
         responder: tx_resp,
     };
 
@@ -390,8 +390,8 @@ async fn delete_topicname_topicuuid_handler(
     let resp = rx_resp.await.unwrap();
 
     match resp {
-        Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Ok(resp) => (StatusCode::OK, Json(resp)),
+        Err(_e) => (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -402,7 +402,7 @@ async fn pub_message(
     let (tx_resp, rx_resp) = oneshot::channel();
 
     let m = restmessage::RestMessage::PubMessage {
-        value: value,
+        value,
         responder: tx_resp,
     };
 
@@ -411,8 +411,8 @@ async fn pub_message(
     let resp = rx_resp.await.unwrap();
 
     match resp {
-        Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Ok(resp) => (StatusCode::OK, Json(resp)),
+        Err(_e) => (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -424,9 +424,9 @@ async fn post_topicname_topicuuid_handler(
     let (tx_resp, rx_resp) = oneshot::channel();
 
     let m = restmessage::RestMessage::PostTopicUUID {
-        topic_name: topic_name,
-        topic_uuid: topic_uuid,
-        value: value,
+        topic_name,
+        topic_uuid,
+        value,
         responder: tx_resp,
     };
 
@@ -435,8 +435,8 @@ async fn post_topicname_topicuuid_handler(
     let resp = rx_resp.await.unwrap();
 
     match resp {
-        Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Ok(resp) => (StatusCode::OK, Json(resp)),
+        Err(_e) => (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -447,8 +447,8 @@ async fn get_topicname_topicuuid_handler(
     let (tx_resp, rx_resp) = oneshot::channel();
 
     let m = restmessage::RestMessage::GetTopicUUID {
-        topic_name: topic_name,
-        topic_uuid: topic_uuid,
+        topic_name,
+        topic_uuid,
         responder: tx_resp,
     };
 
@@ -457,8 +457,8 @@ async fn get_topicname_topicuuid_handler(
     let resp = rx_resp.await.unwrap();
 
     match resp {
-        Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Ok(resp) => (StatusCode::OK, Json(resp)),
+        Err(_e) => (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -469,7 +469,7 @@ async fn get_topicname_handler(
     let (tx_resp, rx_resp) = oneshot::channel();
 
     let m = restmessage::RestMessage::GetTopicName {
-        topic_name: topic_name,
+        topic_name,
         responder: tx_resp,
     };
     tx_rest.send(m).await.unwrap();
@@ -477,8 +477,8 @@ async fn get_topicname_handler(
     let resp = rx_resp.await.unwrap();
 
     match resp {
-        Ok(resp) => return (StatusCode::OK, Json(resp)),
-        Err(_e) => return (StatusCode::NOT_FOUND, Json(json!({}))),
+        Ok(resp) => (StatusCode::OK, Json(resp)),
+        Err(_e) => (StatusCode::NOT_FOUND, Json(json!({}))),
     }
 }
 
@@ -493,10 +493,6 @@ async fn get_all_handler(
     let resp = rx_resp.await.unwrap();
 
     (StatusCode::OK, Json(resp.unwrap()))
-}
-
-async fn handle_webs(socket: WebSocket) {
-    println!("Here");
 }
 
 async fn handle_websocket_req(
@@ -521,15 +517,12 @@ async fn handle_websocket_req(
 
                             let req = msg.request.clone();
 
-                            match msg.request {
-                                SyncWebSocketDomoRequest::Response { value } => {
-                                    if msg.ws_client_id == my_id {
-                                        socket.send(
-                                        Message::Text(serde_json::to_string(&req).unwrap()))
-                                        .await;
-                                    }
-                                }
-                                _ => {}
+                            if let SyncWebSocketDomoRequest::Response { value: _ } = msg.request {
+                                 if msg.ws_client_id == my_id {
+                                     let _ret = socket.send(
+                                     Message::Text(serde_json::to_string(&req).unwrap()))
+                                     .await;
+                                 }
                             }
 
                         }
@@ -548,7 +541,7 @@ async fn handle_websocket_req(
                                         request: req
                                     };
 
-                                    sync_tx_ws.send(msg);
+                                    let _ret = sync_tx_ws.send(msg);
 
                                 }
                                 Message::Close(_) => {
@@ -560,7 +553,7 @@ async fn handle_websocket_req(
                         async_rx = async_rx_ws.recv() => {
                              let msg = async_rx.unwrap();
                              let string_msg = serde_json::to_string(&msg).unwrap();
-                             socket.send(Message::Text(string_msg)).await;
+                             let _ret = socket.send(Message::Text(string_msg)).await;
                         }
 
             }
