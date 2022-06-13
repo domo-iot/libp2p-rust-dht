@@ -59,7 +59,7 @@ impl WebApiManager {
 
         let tx_delete_topicname_topicuuid = tx_rest.clone();
 
-        let tx_pub_message = tx_rest.clone();
+        let tx_pub_message = tx_rest;
 
         let (async_tx_websocket, mut _async_rx_websocket) =
             broadcast::channel::<AsyncWebSocketDomoMessage>(16);
@@ -113,15 +113,13 @@ impl WebApiManager {
                 .await
         });
 
-        let webmanager = WebApiManager {
-            http_port: http_port,
-            sync_rx_websocket: sync_rx_websocket,
-            sync_tx_websocket: sync_tx_websocket,
-            rx_rest: rx_rest,
-            async_tx_websocket: async_tx_websocket,
-        };
-
-        webmanager
+        WebApiManager {
+            http_port,
+            sync_rx_websocket,
+            sync_tx_websocket,
+            rx_rest,
+            async_tx_websocket,
+        }
     }
 
     async fn delete_topicname_topicuuid_handler(
