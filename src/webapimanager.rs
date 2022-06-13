@@ -309,3 +309,36 @@ impl WebApiManager {
         })
     }
 }
+
+mod tests {
+    use serde_json::json;
+
+    #[cfg(test)]
+    #[tokio::test]
+    async fn test_webapimanager_getall() {
+        let mut webmanager = super::WebApiManager::new(1234);
+
+        let task = tokio::spawn(async {
+            let _http_call = reqwest::get("http://localhost:1234/get_all").await;
+        });
+
+        let ret = webmanager.rx_rest.recv().await;
+
+        let mut is_get_all = false;
+
+        match ret {
+            Some(message) => match message {
+                crate::restmessage::RestMessage::GetAll { responder } => {
+                    is_get_all = true;
+                    let _r = responder.send(Ok(json!({})));
+                }
+                _ => {}
+            },
+            None => {}
+        }
+
+        assert_eq!(is_get_all, true);
+
+        let _ret = task.await;
+    }
+}
