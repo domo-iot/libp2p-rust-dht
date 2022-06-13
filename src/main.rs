@@ -1,3 +1,4 @@
+mod domobroker;
 mod domocache;
 mod domolibp2p;
 mod domopersistentstorage;
@@ -16,12 +17,11 @@ use domopersistentstorage::SqliteStorage;
 
 use tokio::io::{self, AsyncBufReadExt};
 
-use std::path::PathBuf;
-
 use crate::domocache::{DomoCache, DomoEvent};
 
 use crate::webapimanager::WebApiManager;
 
+use crate::domobroker::{DomoBroker, DomoBrokerConf};
 use clap::Parser;
 
 use crate::websocketmessage::{
@@ -31,8 +31,8 @@ use crate::websocketmessage::{
 #[derive(Parser, Debug)]
 struct Opt {
     /// Path to a sqlite file
-    #[clap(parse(from_os_str))]
-    sqlite_file: PathBuf,
+    #[clap(parse(try_from_str))]
+    sqlite_file: String,
 
     /// Use a persistent cache
     #[clap(parse(try_from_str))]
@@ -69,41 +69,37 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     env_logger::init();
 
-    let storage = SqliteStorage::new(sqlite_file, is_persistent_cache);
-
-    let mut domo_cache =
-        domocache::DomoCache::new(is_persistent_cache, storage, shared_key, loopback_only).await;
-
     let mut stdin = io::BufReader::new(io::stdin()).lines();
 
-    let mut webmanager = webapimanager::WebApiManager::new(http_port);
+    let domo_broker_conf = DomoBrokerConf {
+        sqlite_file,
+        is_persistent_cache,
+        shared_key,
+        http_port,
+        loopback_only,
+    };
+
+    let mut domo_broker = DomoBroker::new(domo_broker_conf).await?;
 
     loop {
         tokio::select! {
-            webs_message = webmanager.sync_rx_websocket.recv() => {
-                let message = webs_message.unwrap();
-                handle_websocket_sync_request(message, &webmanager, &mut domo_cache).await;
-            }
-
-            Some(rest_message) = webmanager.rx_rest.recv() => {
-                handle_rest_request(rest_message, &mut domo_cache).await;
-            }
-
-            m = domo_cache.cache_event_loop() => {
-                handle_cache_event_loop(m, &webmanager);
+            m = domo_broker.event_loop() => {
+                println!("Domo Event received");
+                match m {
+                    DomoEvent:: None => {},
+                    DomoEvent::VolatileData(_v) => { println!("Volatile"); },
+                    DomoEvent::PersistentData(_v) => { println!("Persistent"); },
+                }
             },
-            line = stdin.next_line() => {
-                handle_user_input(line, &mut domo_cache).await;
-            }
 
+            line = stdin.next_line() => {
+                handle_user_input(line, &mut domo_broker).await;
+            }
         }
     }
 }
 
-async fn handle_user_input(
-    line: io::Result<Option<String>>,
-    domo_cache: &mut DomoCache<SqliteStorage>,
-) {
+async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut DomoBroker) {
     let line = match line {
         Err(_e) => return,
         Ok(s) => match s {
@@ -116,12 +112,12 @@ async fn handle_user_input(
 
     match args.next() {
         Some("HASH") => {
-            domo_cache.print_cache_hash();
+            domo_broker.domo_cache.print_cache_hash();
         }
-        Some("PRINT") => domo_cache.print(),
+        Some("PRINT") => domo_broker.domo_cache.print(),
         Some("PEERS") => {
             println!("Peers:");
-            domo_cache.print_peers_cache()
+            domo_broker.domo_cache.print_peers_cache()
         }
         Some("DEL") => {
             let topic_name = args.next();
@@ -133,7 +129,10 @@ async fn handle_user_input(
                 let topic_name = topic_name.unwrap();
                 let topic_uuid = topic_uuid.unwrap();
 
-                domo_cache.delete_value(topic_name, topic_uuid).await;
+                domo_broker
+                    .domo_cache
+                    .delete_value(topic_name, topic_uuid)
+                    .await;
             }
         }
         Some("PUB") => {
@@ -145,7 +144,7 @@ async fn handle_user_input(
 
             let val = json!({ "payload": value });
 
-            domo_cache.pub_value(val).await;
+            domo_broker.domo_cache.pub_value(val).await;
         }
         Some("PUT") => {
             let topic_name = args.next();
@@ -165,7 +164,10 @@ async fn handle_user_input(
 
                 let val = json!({ "payload": value });
 
-                domo_cache.write_value(topic_name, topic_uuid, val).await;
+                domo_broker
+                    .domo_cache
+                    .write_value(topic_name, topic_uuid, val)
+                    .await;
             }
         }
         _ => {
@@ -177,201 +179,5 @@ async fn handle_user_input(
             println!("PUT <topic_name> <topic_uuid> <value>");
             println!("DEL <topic_name> <topic_uuid>");
         }
-    }
-}
-
-async fn handle_websocket_sync_request(
-    message: SyncWebSocketDomoMessage,
-    webmanager: &WebApiManager,
-    domo_cache: &mut DomoCache<SqliteStorage>,
-) {
-    match message.request {
-        SyncWebSocketDomoRequest::RequestGetAll => {
-            println!("WebSocket RequestGetAll");
-
-            let resp = SyncWebSocketDomoRequest::Response {
-                value: domo_cache.get_all(),
-            };
-
-            let r = SyncWebSocketDomoMessage {
-                ws_client_id: message.ws_client_id,
-                req_id: message.req_id,
-                request: resp,
-            };
-
-            let _ret = webmanager.sync_tx_websocket.send(r);
-        }
-
-        SyncWebSocketDomoRequest::RequestGetTopicName { topic_name } => {
-            println!("WebSocket RequestGetTopicName");
-
-            let ret = domo_cache.get_topic_name(&topic_name);
-
-            let value = match ret {
-                Ok(m) => m,
-                Err(_e) => json!({}),
-            };
-
-            let resp = SyncWebSocketDomoRequest::Response { value };
-
-            let r = SyncWebSocketDomoMessage {
-                ws_client_id: message.ws_client_id,
-                req_id: message.req_id,
-                request: resp,
-            };
-
-            let _ret = webmanager.sync_tx_websocket.send(r);
-        }
-
-        SyncWebSocketDomoRequest::RequestGetTopicUUID {
-            topic_name,
-            topic_uuid,
-        } => {
-            println!("WebSocket RequestGetTopicUUID");
-
-            let ret = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
-            let value = match ret {
-                Ok(m) => m,
-                Err(_e) => json!({}),
-            };
-
-            let resp = SyncWebSocketDomoRequest::Response { value };
-
-            let r = SyncWebSocketDomoMessage {
-                ws_client_id: message.ws_client_id,
-                req_id: message.req_id,
-                request: resp,
-            };
-
-            let _ret = webmanager.sync_tx_websocket.send(r);
-        }
-
-        SyncWebSocketDomoRequest::RequestDeleteTopicUUID {
-            topic_name,
-            topic_uuid,
-        } => {
-            let _ret = domo_cache.delete_value(&topic_name, &topic_uuid).await;
-            println!("WebSocket RequestDeleteTopicUUID");
-        }
-
-        SyncWebSocketDomoRequest::RequestPostTopicUUID {
-            topic_name,
-            topic_uuid,
-            value,
-        } => {
-            println!("WebSocket RequestPostTopicUUID");
-
-            let _ret = domo_cache
-                .write_value(&topic_name, &topic_uuid, value.clone())
-                .await;
-        }
-
-        SyncWebSocketDomoRequest::RequestPubMessage { value } => {
-            println!("WebSocket RequestPubMessage");
-            let _ret = domo_cache.pub_value(value.clone()).await;
-        }
-
-        _ => {}
-    }
-}
-
-async fn handle_rest_request(
-    rest_message: restmessage::RestMessage,
-    domo_cache: &mut DomoCache<SqliteStorage>,
-) {
-    match rest_message {
-        restmessage::RestMessage::GetAll { responder } => {
-            let resp = domo_cache.get_all();
-            match responder.send(Ok(resp)) {
-                Ok(_m) => log::debug!("Rest response ok"),
-                Err(_e) => log::debug!("Error while sending Rest Reponse"),
-            }
-        }
-        restmessage::RestMessage::GetTopicName {
-            topic_name,
-            responder,
-        } => {
-            let resp = domo_cache.get_topic_name(&topic_name);
-            if let Ok(resp) = resp {
-                match responder.send(Ok(resp)) {
-                    Ok(_m) => log::debug!("Rest response ok"),
-                    Err(_e) => log::debug!("Error while sending Rest Reponse"),
-                }
-            }
-        }
-        restmessage::RestMessage::GetTopicUUID {
-            topic_name,
-            topic_uuid,
-            responder,
-        } => {
-            let resp = domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
-
-            if let Ok(resp) = resp {
-                match responder.send(Ok(resp)) {
-                    Ok(_m) => log::debug!("Rest response ok"),
-                    Err(_e) => log::debug!("Error while sending Rest Reponse"),
-                }
-            }
-        }
-        restmessage::RestMessage::PostTopicUUID {
-            topic_name,
-            topic_uuid,
-            value,
-            responder,
-        } => {
-            domo_cache
-                .write_value(&topic_name, &topic_uuid, value.clone())
-                .await;
-            match responder.send(Ok(value)) {
-                Ok(_m) => log::debug!("Rest response ok"),
-                Err(_e) => log::debug!("Error while sending Rest Reponse"),
-            }
-        }
-        restmessage::RestMessage::DeleteTopicUUID {
-            topic_name,
-            topic_uuid,
-            responder,
-        } => {
-            domo_cache.delete_value(&topic_name, &topic_uuid).await;
-            match responder.send(Ok(json!({}))) {
-                Ok(_m) => log::debug!("Rest response ok"),
-                Err(_e) => log::debug!("Error while sending Rest Reponse"),
-            }
-        }
-        restmessage::RestMessage::PubMessage { value, responder } => {
-            domo_cache.pub_value(value.clone()).await;
-            match responder.send(Ok(value)) {
-                Ok(_m) => log::debug!("Rest response ok"),
-                Err(_e) => log::debug!("Error while sending Rest Reponse"),
-            }
-        }
-    }
-}
-
-fn handle_cache_event_loop(m: Result<DomoEvent, Box<dyn Error>>, webmanager: &WebApiManager) {
-    match m {
-        Ok(domocache::DomoEvent::None) => {}
-        Ok(domocache::DomoEvent::PersistentData(m)) => {
-            println!(
-                "Persistent message received {} {}",
-                m.topic_name, m.topic_uuid
-            );
-            let _ret = webmanager
-                .async_tx_websocket
-                .send(AsyncWebSocketDomoMessage::Persistent {
-                    topic_name: m.topic_name,
-                    topic_uuid: m.topic_uuid,
-                    value: m.value,
-                    deleted: m.deleted,
-                });
-        }
-        Ok(domocache::DomoEvent::VolatileData(m)) => {
-            println!("Volatile message {}", m);
-
-            let _ret = webmanager
-                .async_tx_websocket
-                .send(AsyncWebSocketDomoMessage::Volatile { value: m });
-        }
-        _ => {}
     }
 }

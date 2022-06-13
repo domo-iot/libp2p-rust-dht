@@ -403,6 +403,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let swarm = crate::domolibp2p::start(shared_key, loopback_only)
             .await
             .unwrap();
+
         let peer_id = swarm.local_peer_id().to_string();
 
         let (client_tx_channel, client_rx_channel) = mpsc::channel::<DomoEvent>(32);
@@ -425,9 +426,10 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let ret = c.storage.get_all_elements();
 
         for elem in ret {
-            // non ripubblicp
+            // non ripubblico
             c.insert_cache_element(elem, false, false).await;
         }
+
         c
     }
 
