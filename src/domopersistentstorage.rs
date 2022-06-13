@@ -133,7 +133,7 @@ mod tests {
     }
 
     #[test]
-    fn test_initial_get_all_element() {
+    fn test_initial_get_all_elements() {
         use super::DomoPersistentStorage;
 
         let mut s =
