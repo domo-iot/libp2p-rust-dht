@@ -261,3 +261,47 @@ impl DomoBroker {
         }
     }
 }
+
+mod tests {
+    use tokio::sync::mpsc;
+
+    #[cfg(test)]
+    #[tokio::test]
+    async fn domo_broker() {
+        let _remove = std::fs::remove_file("/tmp/test_domo_broker.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3000,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let hnd = tokio::spawn(async move {
+            let http_call = reqwest::get("http://localhost:3000/get_all").await.unwrap();
+
+            let text: serde_json::Value =
+                serde_json::from_str(&http_call.text().await.unwrap()).unwrap();
+
+            assert_eq!(text, serde_json::json!({}));
+
+            let _ret = tx_rest.send("Done").await;
+        });
+
+        tokio::select! {
+            _m = domo_broker.event_loop() => {},
+            _waiting = rx_rest.recv() => {
+                println!("Test finished");
+            }
+        }
+
+        let _ret = hnd.await;
+    }
+}
