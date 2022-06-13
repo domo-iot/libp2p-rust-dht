@@ -47,7 +47,7 @@ impl WebApiManager {
     pub fn new(http_port: u16) -> Self {
         let addr = SocketAddr::from(([127, 0, 0, 1], http_port));
 
-        let (tx_rest, mut rx_rest) = mpsc::channel(32);
+        let (tx_rest, rx_rest) = mpsc::channel(32);
 
         let tx_get_all = tx_rest.clone();
 
@@ -66,7 +66,7 @@ impl WebApiManager {
 
         let async_tx_websocket_copy = async_tx_websocket.clone();
 
-        let (sync_tx_websocket, mut sync_rx_websocket) =
+        let (sync_tx_websocket, sync_rx_websocket) =
             broadcast::channel::<SyncWebSocketDomoMessage>(16);
 
         let sync_tx_websocket_copy = sync_tx_websocket.clone();
@@ -306,7 +306,6 @@ impl WebApiManager {
                              let string_msg = serde_json::to_string(&msg).unwrap();
                              let _ret = socket.send(Message::Text(string_msg)).await;
                         }
-
             }
             }
         })
