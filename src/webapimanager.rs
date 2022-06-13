@@ -277,6 +277,10 @@ impl WebApiManager {
                         }
                         Some(msg) = socket.recv() => {
 
+                            if let Err(_e) = msg {
+                                return;
+                            }
+
                             match msg.unwrap() {
                                 Message::Text(message) => {
                                     // parso il messaggio
@@ -313,9 +317,15 @@ impl WebApiManager {
 mod tests {
     use serde_json::json;
 
+    use crate::SyncWebSocketDomoRequest;
+
+    use futures_util::{SinkExt, StreamExt};
+
+    use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
     #[cfg(test)]
     #[tokio::test]
-    async fn test_webapimanager_getall() {
+    async fn test_webapimanager_rest() {
         let mut webmanager = super::WebApiManager::new(1234);
 
         let task = tokio::spawn(async {
@@ -335,6 +345,41 @@ mod tests {
                 _ => {}
             },
             None => {}
+        }
+
+        assert_eq!(is_get_all, true);
+
+        let _ret = task.await;
+    }
+
+    #[tokio::test]
+    async fn test_webapimanager_websocket() {
+        let mut webmanager = super::WebApiManager::new(1235);
+
+        let task = tokio::spawn(async {
+            let url = url::Url::parse("ws://localhost:1235/ws").unwrap();
+
+            let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+
+            let (mut write, _read) = ws_stream.split();
+
+            let _ret = write
+                .send(Message::Text("\"RequestGetAll\"".to_owned()))
+                .await;
+        });
+
+        let ret = webmanager.sync_rx_websocket.recv().await;
+
+        let mut is_get_all = false;
+
+        match ret {
+            Ok(message) => match message.request {
+                SyncWebSocketDomoRequest::RequestGetAll => {
+                    is_get_all = true;
+                }
+                _ => {}
+            },
+            _ => {}
         }
 
         assert_eq!(is_get_all, true);
