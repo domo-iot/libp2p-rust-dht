@@ -315,13 +315,6 @@ impl WebApiManager {
 }
 
 mod tests {
-    use serde_json::json;
-
-    use crate::SyncWebSocketDomoRequest;
-
-    use futures_util::{SinkExt, StreamExt};
-
-    use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
     #[cfg(test)]
     #[tokio::test]
@@ -340,7 +333,7 @@ mod tests {
             Some(message) => match message {
                 crate::restmessage::RestMessage::GetAll { responder } => {
                     is_get_all = true;
-                    let _r = responder.send(Ok(json!({})));
+                    let _r = responder.send(Ok(serde_json::json!({})));
                 }
                 _ => {}
             },
@@ -354,6 +347,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_webapimanager_websocket() {
+        use futures_util::{SinkExt, StreamExt};
+
+        use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
         let mut webmanager = super::WebApiManager::new(1235);
 
         let task = tokio::spawn(async {
@@ -374,7 +371,7 @@ mod tests {
 
         match ret {
             Ok(message) => match message.request {
-                SyncWebSocketDomoRequest::RequestGetAll => {
+                crate::websocketmessage::SyncWebSocketDomoRequest::RequestGetAll => {
                     is_get_all = true;
                 }
                 _ => {}
