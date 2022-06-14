@@ -237,6 +237,7 @@ impl WebApiManager {
         let (tx_resp, rx_resp) = oneshot::channel();
 
         let m = restmessage::RestMessage::GetAll { responder: tx_resp };
+
         tx_rest.send(m).await.unwrap();
 
         let resp = rx_resp.await.unwrap();
