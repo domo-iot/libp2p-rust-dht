@@ -174,7 +174,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     pub fn get_topic_uuid(&self, topic_name: &str, topic_uuid: &str) -> Result<Value, String> {
         let ret = self.read_cache_element(topic_name, topic_uuid);
         match ret {
-            None => Err(String::from("TopicName TopicUUID not found")),
+            None => Ok(serde_json::json!({})),
             Some(cache_element) => Ok(serde_json::json!({
                         "topic_name": topic_name.to_owned(),
                         "topic_uuid": topic_uuid.to_owned(),
@@ -188,7 +188,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let mut ret: Value = serde_json::from_str(s).unwrap();
 
         match self.cache.get(topic_name) {
-            None => Err(String::from("topic_name not found")),
+            None => Ok(serde_json::json!([])),
             Some(topic_name_map) => {
                 for (topic_uuid, cache_element) in topic_name_map.iter() {
                     if !cache_element.deleted {
