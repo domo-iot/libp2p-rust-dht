@@ -275,6 +275,7 @@ impl DomoBroker {
 }
 
 mod tests {
+    use crate::DomoEvent;
     use std::collections::HashMap;
     use tokio::sync::mpsc;
 
@@ -717,6 +718,125 @@ mod tests {
                         Err(_e) => assert_eq!(true, false)
                     }
 
+                    stopped = true;
+                }
+            }
+        }
+
+        let _ret = hnd.await;
+    }
+
+    #[tokio::test]
+    async fn domo_broker_rest_delete_test() {
+        let _remove = std::fs::remove_file("/tmp/test_domo_broker_delete_test.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_delete_test.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3007,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        domo_broker
+            .domo_cache
+            .write_value("Domo::Light", "uno", serde_json::json!({"connected": true}))
+            .await;
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let hnd = tokio::spawn(async move {
+            let client = reqwest::Client::new();
+
+            let _http_call = client
+                .delete("http://localhost:3007/topic_name/Domo::Light/topic_uuid/uno")
+                .send()
+                .await
+                .unwrap();
+
+            let _ret = tx_rest.send("done").await;
+        });
+
+        let mut stopped = false;
+
+        while !stopped {
+            tokio::select! {
+                _m = domo_broker.event_loop() => {
+
+                },
+                _result = rx_rest.recv() => {
+
+                    let ret = domo_broker.domo_cache.get_topic_uuid("Domo::Light", "uno");
+
+                    match ret {
+                        Ok(m) =>  {
+                           assert_eq!(m, serde_json::json!(
+                                {}
+                            ));
+                        },
+                        Err(_e) => assert_eq!(true, false)
+                    }
+
+                    stopped = true;
+                }
+            }
+        }
+
+        let _ret = hnd.await;
+    }
+
+    #[tokio::test]
+    async fn domo_broker_rest_pub_test() {
+        let _remove = std::fs::remove_file("/tmp/test_domo_broker_pub_test.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_pub_test.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3008,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let hnd = tokio::spawn(async move {
+            let mut body = HashMap::new();
+            body.insert("message", "hello");
+
+            let client = reqwest::Client::new();
+
+            let _http_call = client
+                .post("http://localhost:3008/pub")
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+
+            let _ret = tx_rest.send("done").await;
+        });
+
+        let mut stopped = false;
+
+        while !stopped {
+            tokio::select! {
+                m = domo_broker.event_loop() => {
+
+                    match m {
+                        DomoEvent::VolatileData( value ) => {
+                            assert_eq!(value, serde_json::json!({"message": "hello"}));
+                        },
+                        _ => {}
+                    }
+                },
+                _result = rx_rest.recv() => {
                     stopped = true;
                 }
             }
