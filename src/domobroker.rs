@@ -275,6 +275,7 @@ impl DomoBroker {
 }
 
 mod tests {
+    use std::collections::HashMap;
     use tokio::sync::mpsc;
 
     #[cfg(test)]
@@ -648,6 +649,74 @@ mod tests {
                         result,
                         serde_json::json!({})
                     );
+                    stopped = true;
+                }
+            }
+        }
+
+        let _ret = hnd.await;
+    }
+
+    #[tokio::test]
+    async fn domo_broker_rest_post_test() {
+        let _remove = std::fs::remove_file("/tmp/test_domo_broker_post_test.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_post_test.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3006,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let hnd = tokio::spawn(async move {
+            let mut body = HashMap::new();
+            body.insert("connected", true);
+
+            let client = reqwest::Client::new();
+
+            let _http_call = client
+                .post("http://localhost:3006/topic_name/Domo::Light/topic_uuid/uno")
+                .json(&body)
+                .send()
+                .await
+                .unwrap();
+
+            let _ret = tx_rest.send("done").await;
+        });
+
+        let mut stopped = false;
+
+        while !stopped {
+            tokio::select! {
+                _m = domo_broker.event_loop() => {
+
+                },
+                _result = rx_rest.recv() => {
+
+                    let ret = domo_broker.domo_cache.get_topic_uuid("Domo::Light", "uno");
+
+                    match ret {
+                        Ok(m) =>  {
+                           assert_eq!(m, serde_json::json!(
+                                {
+                                    "topic_name": "Domo::Light",
+                                    "topic_uuid": "uno",
+                                    "value": {
+                                        "connected": true
+                                    }
+                                }
+                            ));
+                        },
+                        Err(_e) => assert_eq!(true, false)
+                    }
+
                     stopped = true;
                 }
             }
