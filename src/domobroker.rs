@@ -275,11 +275,10 @@ impl DomoBroker {
 }
 
 mod tests {
-    use crate::DomoEvent;
+    use crate::{AsyncWebSocketDomoMessage, DomoEvent, SyncWebSocketDomoRequest};
+
     use std::collections::HashMap;
-    use std::time::Duration;
     use tokio::sync::mpsc;
-    use tokio::time::sleep;
 
     #[cfg(test)]
     #[tokio::test]
@@ -863,14 +862,14 @@ mod tests {
             shared_key: String::from(
                 "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
             ),
-            http_port: 3008,
+            http_port: 3009,
             loopback_only: false,
         };
 
         let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
 
         tokio::spawn(async move {
-            let url = url::Url::parse("ws://localhost:3008/ws").unwrap();
+            let url = url::Url::parse("ws://localhost:3009/ws").unwrap();
 
             let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
 
@@ -895,7 +894,7 @@ mod tests {
                     let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
 
                     if rcv_value == expected {
-                        tx_rest.send("OK").await;
+                        let _ret = tx_rest.send("OK").await;
                     }
                 }
                 _ => {}
@@ -934,7 +933,7 @@ mod tests {
             shared_key: String::from(
                 "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
             ),
-            http_port: 3008,
+            http_port: 3010,
             loopback_only: false,
         };
 
@@ -951,7 +950,7 @@ mod tests {
             .await;
 
         tokio::spawn(async move {
-            let url = url::Url::parse("ws://localhost:3008/ws").unwrap();
+            let url = url::Url::parse("ws://localhost:3010/ws").unwrap();
 
             let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
 
@@ -993,7 +992,424 @@ mod tests {
                     let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
 
                     if rcv_value == expected {
-                        tx_rest.send("OK").await;
+                        let _ret = tx_rest.send("OK").await;
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        let mut results_received = false;
+        while !results_received {
+            tokio::select! {
+                result = rx_rest.recv() => {
+                    results_received = true;
+
+                    let result = result.unwrap();
+                    assert_eq!(result, "OK");
+                },
+                _m = domo_broker.event_loop() => {
+
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn domo_broker_test_websocket_get_topicname() {
+        use futures_util::{SinkExt, StreamExt};
+
+        use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let _remove =
+            std::fs::remove_file("/tmp/test_domo_broker_test_websocket_get_topicname.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_get_topicname.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3011,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        domo_broker
+            .domo_cache
+            .write_value("Domo::Light", "uno", serde_json::json!({"connected": true}))
+            .await;
+
+        domo_broker
+            .domo_cache
+            .write_value(
+                "Domo::Socket",
+                "due",
+                serde_json::json!({"connected": true}),
+            )
+            .await;
+
+        tokio::spawn(async move {
+            let url = url::Url::parse("ws://localhost:3011/ws").unwrap();
+
+            let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+
+            let (mut write, mut read) = ws_stream.split();
+
+            let req = serde_json::to_string(&SyncWebSocketDomoRequest::RequestGetTopicName {
+                topic_name: "Domo::Light".to_string(),
+            })
+            .unwrap();
+
+            let _ret = write.send(Message::Text(req)).await;
+
+            let msg = read.next().await.unwrap().unwrap();
+
+            match msg {
+                Message::Text(text) => {
+                    let expected = serde_json::json!(
+                        {
+                            "Response": {
+                                "value": [
+                                {
+                                    "topic_name": "Domo::Light",
+                                    "topic_uuid": "uno",
+                                    "value": {
+                                        "connected": true
+                                    }
+                                }
+
+                                ]
+                            }
+                        }
+                    );
+
+                    let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+                    if rcv_value == expected {
+                        let _ret = tx_rest.send("OK").await;
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        let mut results_received = false;
+        while !results_received {
+            tokio::select! {
+                result = rx_rest.recv() => {
+                    results_received = true;
+
+                    let result = result.unwrap();
+                    assert_eq!(result, "OK");
+                },
+                _m = domo_broker.event_loop() => {
+
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn domo_broker_test_websocket_get_topicuuid() {
+        use futures_util::{SinkExt, StreamExt};
+
+        use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let _remove =
+            std::fs::remove_file("/tmp/test_domo_broker_test_websocket_get_topicuuid.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_get_topicuuid.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3012,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        domo_broker
+            .domo_cache
+            .write_value("Domo::Light", "uno", serde_json::json!({"connected": true}))
+            .await;
+
+        domo_broker
+            .domo_cache
+            .write_value(
+                "Domo::Socket",
+                "due",
+                serde_json::json!({"connected": true}),
+            )
+            .await;
+
+        tokio::spawn(async move {
+            let url = url::Url::parse("ws://localhost:3012/ws").unwrap();
+
+            let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+
+            let (mut write, mut read) = ws_stream.split();
+
+            let req = serde_json::to_string(&SyncWebSocketDomoRequest::RequestGetTopicUUID {
+                topic_name: "Domo::Light".to_string(),
+                topic_uuid: "uno".to_string(),
+            })
+            .unwrap();
+
+            let _ret = write.send(Message::Text(req)).await;
+
+            let msg = read.next().await.unwrap().unwrap();
+
+            match msg {
+                Message::Text(text) => {
+                    let expected = serde_json::json!(
+                        {
+                            "Response": {
+                                "value":
+                                {
+                                    "topic_name": "Domo::Light",
+                                    "topic_uuid": "uno",
+                                    "value": {
+                                        "connected": true
+                                    }
+                                }
+
+                            }
+                        }
+                    );
+
+                    let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+                    if rcv_value == expected {
+                        let _ret = tx_rest.send("OK").await;
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        let mut results_received = false;
+        while !results_received {
+            tokio::select! {
+                result = rx_rest.recv() => {
+                    results_received = true;
+
+                    let result = result.unwrap();
+                    assert_eq!(result, "OK");
+                },
+                _m = domo_broker.event_loop() => {
+
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn domo_broker_test_websocket_post() {
+        use futures_util::{SinkExt, StreamExt};
+
+        use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_post.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_post.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3013,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        tokio::spawn(async move {
+            let url = url::Url::parse("ws://localhost:3013/ws").unwrap();
+
+            let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+
+            let (mut write, mut read) = ws_stream.split();
+
+            let req = serde_json::to_string(&SyncWebSocketDomoRequest::RequestPostTopicUUID {
+                topic_name: "Domo::Light".to_string(),
+                topic_uuid: "uno".to_string(),
+                value: serde_json::json!({"connected": true}),
+            })
+            .unwrap();
+
+            let _ret = write.send(Message::Text(req)).await;
+
+            let msg = read.next().await.unwrap().unwrap();
+
+            match msg {
+                Message::Text(text) => {
+                    let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
+                        topic_name: "Domo::Light".to_owned(),
+                        topic_uuid: "uno".to_owned(),
+                        value: serde_json::json!({"connected": true}),
+                        deleted: false,
+                    })
+                    .unwrap();
+
+                    if text == expected {
+                        let _ret = tx_rest.send("OK").await;
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        let mut results_received = false;
+        while !results_received {
+            tokio::select! {
+                result = rx_rest.recv() => {
+                    results_received = true;
+
+                    let result = result.unwrap();
+                    assert_eq!(result, "OK");
+                },
+                _m = domo_broker.event_loop() => {
+
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn domo_broker_test_websocket_delete() {
+        use futures_util::{SinkExt, StreamExt};
+
+        use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_delete.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_delete.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3014,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        domo_broker
+            .domo_cache
+            .write_value("Domo::Light", "uno", serde_json::json!({"connected": true}))
+            .await;
+
+        tokio::spawn(async move {
+            let url = url::Url::parse("ws://localhost:3014/ws").unwrap();
+
+            let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+
+            let (mut write, mut read) = ws_stream.split();
+
+            let req = serde_json::to_string(&SyncWebSocketDomoRequest::RequestDeleteTopicUUID {
+                topic_name: "Domo::Light".to_string(),
+                topic_uuid: "uno".to_string(),
+            })
+            .unwrap();
+
+            let _ret = write.send(Message::Text(req)).await;
+
+            let msg = read.next().await.unwrap().unwrap();
+
+            match msg {
+                Message::Text(text) => {
+                    let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
+                        topic_name: "Domo::Light".to_owned(),
+                        topic_uuid: "uno".to_owned(),
+                        value: serde_json::Value::Null,
+                        deleted: true,
+                    })
+                    .unwrap();
+
+                    if text == expected {
+                        let _ret = tx_rest.send("OK").await;
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        let mut results_received = false;
+        while !results_received {
+            tokio::select! {
+                result = rx_rest.recv() => {
+                    results_received = true;
+
+                    let result = result.unwrap();
+                    assert_eq!(result, "OK");
+                },
+                _m = domo_broker.event_loop() => {
+
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn domo_broker_test_websocket_pub() {
+        use futures_util::{SinkExt, StreamExt};
+
+        use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        let (tx_rest, mut rx_rest) = mpsc::channel(1);
+
+        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_pub.sqlite");
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_pub.sqlite"),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port: 3015,
+            loopback_only: false,
+        };
+
+        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        tokio::spawn(async move {
+            let url = url::Url::parse("ws://localhost:3015/ws").unwrap();
+
+            let (ws_stream, _) = connect_async(url).await.expect("Failed to connect");
+
+            let (mut write, mut read) = ws_stream.split();
+
+            let req = serde_json::to_string(&SyncWebSocketDomoRequest::RequestPubMessage {
+                value: serde_json::json!({"message": "hello"}),
+            })
+            .unwrap();
+
+            let _ret = write.send(Message::Text(req)).await;
+
+            let msg = read.next().await.unwrap().unwrap();
+
+            match msg {
+                Message::Text(text) => {
+                    let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Volatile {
+                        value: serde_json::json!({"message": "hello"}),
+                    })
+                    .unwrap();
+
+                    if text == expected {
+                        let _ret = tx_rest.send("OK").await;
                     }
                 }
                 _ => {}
