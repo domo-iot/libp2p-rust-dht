@@ -655,7 +655,10 @@ mod tests {
     #[cfg(test)]
     #[tokio::test]
     async fn test_write_and_read_key() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new(
+            "/tmp/test_write_and_read.sqlite",
+            true,
+        );
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
@@ -677,7 +680,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_twice_same_key() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new(
+            "/tmp/test_write_twice_same_key.sqlite",
+            true,
+        );
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
@@ -715,7 +721,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_old_timestamp() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new(
+            "/tmp/test_write_old_timestamp.sqlite",
+            true,
+        );
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
@@ -742,14 +751,11 @@ mod tests {
             republication_timestamp: 0,
         };
 
-        // mi aspetto il vecchio valore perchè non deve fare la scrittura
-
         let ret = domo_cache
             .write_with_timestamp_check("Domo::Light", "luce-timestamp", el)
             .await
             .unwrap();
 
-        // mi aspetto di ricevere il vecchio valore
         assert_eq!(ret, old_val);
 
         domo_cache
