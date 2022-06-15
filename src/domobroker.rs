@@ -22,7 +22,7 @@ pub struct DomoBrokerConf {
 
 impl DomoBroker {
     pub async fn new(conf: DomoBrokerConf) -> Result<Self, String> {
-        if conf.sqlite_file == "" {
+        if conf.sqlite_file.is_empty() {
             return Err(String::from("sqlite_file path needed"));
         }
 
@@ -275,14 +275,12 @@ impl DomoBroker {
 }
 
 mod tests {
-    use crate::{AsyncWebSocketDomoMessage, DomoEvent, SyncWebSocketDomoRequest};
-
-    use std::collections::HashMap;
-    use tokio::sync::mpsc;
 
     #[cfg(test)]
     #[tokio::test]
     async fn domo_broker_empty_cache() {
+        use tokio::sync::mpsc;
+
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_empty_cache.sqlite");
 
         let domo_broker_conf = super::DomoBrokerConf {
@@ -325,6 +323,8 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_get_all() {
+        use tokio::sync::mpsc;
+
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_get_all.sqlite");
 
         let domo_broker_conf = super::DomoBrokerConf {
@@ -399,6 +399,8 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_get_topicname() {
+        use tokio::sync::mpsc;
+
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_get_topicname.sqlite");
 
         let domo_broker_conf = super::DomoBrokerConf {
@@ -472,6 +474,8 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_get_topicuuid() {
+        use tokio::sync::mpsc;
+
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_get_topicuuid.sqlite");
 
         let domo_broker_conf = super::DomoBrokerConf {
@@ -546,6 +550,8 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_get_topicname_not_present() {
+        use tokio::sync::mpsc;
+
         let _remove =
             std::fs::remove_file("/tmp/test_domo_broker_get_topicname_not_present.sqlite");
 
@@ -603,6 +609,8 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_get_topicuuid_not_present() {
+        use tokio::sync::mpsc;
+
         let _remove =
             std::fs::remove_file("/tmp/test_domo_broker_get_topicuuid_not_present.sqlite");
 
@@ -661,6 +669,9 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_post_test() {
+        use std::collections::HashMap;
+        use tokio::sync::mpsc;
+
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_post_test.sqlite");
 
         let domo_broker_conf = super::DomoBrokerConf {
@@ -729,6 +740,8 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_delete_test() {
+        use tokio::sync::mpsc;
+
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_delete_test.sqlite");
 
         let domo_broker_conf = super::DomoBrokerConf {
@@ -792,6 +805,10 @@ mod tests {
 
     #[tokio::test]
     async fn domo_broker_rest_pub_test() {
+        use crate::domocache::DomoEvent;
+        use std::collections::HashMap;
+        use tokio::sync::mpsc;
+
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_pub_test.sqlite");
 
         let domo_broker_conf = super::DomoBrokerConf {
@@ -851,6 +868,8 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        use tokio::sync::mpsc;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
@@ -922,6 +941,8 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        use tokio::sync::mpsc;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
@@ -1021,6 +1042,10 @@ mod tests {
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
+        use crate::SyncWebSocketDomoRequest;
+
+        use tokio::sync::mpsc;
+
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
         let _remove =
@@ -1118,6 +1143,10 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        use crate::SyncWebSocketDomoRequest;
+
+        use tokio::sync::mpsc;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
@@ -1217,6 +1246,10 @@ mod tests {
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
+        use crate::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
+
+        use tokio::sync::mpsc;
+
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
         let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_post.sqlite");
@@ -1290,6 +1323,10 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        use crate::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
+
+        use tokio::sync::mpsc;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
@@ -1368,6 +1405,10 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
+
+        use crate::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
+
+        use tokio::sync::mpsc;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
