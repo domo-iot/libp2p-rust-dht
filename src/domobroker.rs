@@ -275,25 +275,32 @@ impl DomoBroker {
 }
 
 mod tests {
+    use crate::DomoBroker;
+
+    async fn setup_broker(sqlite_file: &str, http_port: u16) -> DomoBroker {
+        let _remove = std::fs::remove_file(sqlite_file);
+
+        let domo_broker_conf = super::DomoBrokerConf {
+            sqlite_file: sqlite_file.to_owned(),
+            is_persistent_cache: true,
+            shared_key: String::from(
+                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+            ),
+            http_port,
+            loopback_only: false,
+        };
+
+        let domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+
+        domo_broker
+    }
 
     #[cfg(test)]
     #[tokio::test]
     async fn domo_broker_empty_cache() {
         use tokio::sync::mpsc;
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_empty_cache.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_empty_cache.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3000,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker("/tmp/test_domo_broker_empty_cache.sqlite", 3000).await;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
@@ -325,19 +332,7 @@ mod tests {
     async fn domo_broker_rest_get_all() {
         use tokio::sync::mpsc;
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_get_all.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_get_all.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3001,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker("/tmp/test_domo_broker_get_all.sqlite", 3001).await;
 
         domo_broker
             .domo_cache
@@ -401,19 +396,8 @@ mod tests {
     async fn domo_broker_rest_get_topicname() {
         use tokio::sync::mpsc;
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_get_topicname.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_get_topicname.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3002,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker =
+            setup_broker("/tmp/test_domo_broker_get_topicname.sqlite", 3002).await;
 
         domo_broker
             .domo_cache
@@ -476,19 +460,8 @@ mod tests {
     async fn domo_broker_rest_get_topicuuid() {
         use tokio::sync::mpsc;
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_get_topicuuid.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_get_topicuuid.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3003,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker =
+            setup_broker("/tmp/test_domo_broker_get_topicuuid.sqlite", 3003).await;
 
         domo_broker
             .domo_cache
@@ -552,20 +525,11 @@ mod tests {
     async fn domo_broker_rest_get_topicname_not_present() {
         use tokio::sync::mpsc;
 
-        let _remove =
-            std::fs::remove_file("/tmp/test_domo_broker_get_topicname_not_present.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_get_topicname_not_present.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3004,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker(
+            "/tmp/test_domo_broker_get_topicname_not_present.sqlite",
+            3004,
+        )
+        .await;
 
         domo_broker
             .domo_cache
@@ -611,20 +575,11 @@ mod tests {
     async fn domo_broker_rest_get_topicuuid_not_present() {
         use tokio::sync::mpsc;
 
-        let _remove =
-            std::fs::remove_file("/tmp/test_domo_broker_get_topicuuid_not_present.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_get_topicuuid_not_present.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3005,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker(
+            "/tmp/test_domo_broker_get_topicuuid_not_present.sqlite",
+            3005,
+        )
+        .await;
 
         domo_broker
             .domo_cache
@@ -672,19 +627,7 @@ mod tests {
         use std::collections::HashMap;
         use tokio::sync::mpsc;
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_post_test.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_post_test.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3006,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker("/tmp/test_domo_broker_post_test.sqlite", 3006).await;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
@@ -742,19 +685,7 @@ mod tests {
     async fn domo_broker_rest_delete_test() {
         use tokio::sync::mpsc;
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_delete_test.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_delete_test.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3007,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker("/tmp/test_domo_broker_delete_test.sqlite", 3007).await;
 
         domo_broker
             .domo_cache
@@ -809,19 +740,7 @@ mod tests {
         use std::collections::HashMap;
         use tokio::sync::mpsc;
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_pub_test.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_pub_test.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3008,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker("/tmp/test_domo_broker_pub_test.sqlite", 3008).await;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
@@ -873,19 +792,8 @@ mod tests {
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_empty.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_empty.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3009,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker =
+            setup_broker("/tmp/test_domo_broker_test_websocket_empty.sqlite", 3009).await;
 
         tokio::spawn(async move {
             let url = url::Url::parse("ws://localhost:3009/ws").unwrap();
@@ -946,19 +854,8 @@ mod tests {
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_getall.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_getall.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3010,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker =
+            setup_broker("/tmp/test_domo_broker_test_websocket_getall.sqlite", 3010).await;
 
         domo_broker
             .domo_cache
@@ -1048,20 +945,11 @@ mod tests {
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
-        let _remove =
-            std::fs::remove_file("/tmp/test_domo_broker_test_websocket_get_topicname.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_get_topicname.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3011,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker(
+            "/tmp/test_domo_broker_test_websocket_get_topicname.sqlite",
+            3011,
+        )
+        .await;
 
         domo_broker
             .domo_cache
@@ -1150,20 +1038,11 @@ mod tests {
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
-        let _remove =
-            std::fs::remove_file("/tmp/test_domo_broker_test_websocket_get_topicuuid.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_get_topicuuid.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3012,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker = setup_broker(
+            "/tmp/test_domo_broker_test_websocket_get_topicuuid.sqlite",
+            3012,
+        )
+        .await;
 
         domo_broker
             .domo_cache
@@ -1252,19 +1131,8 @@ mod tests {
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_post.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_post.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3013,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker =
+            setup_broker("/tmp/test_domo_broker_test_websocket_post.sqlite", 3013).await;
 
         tokio::spawn(async move {
             let url = url::Url::parse("ws://localhost:3013/ws").unwrap();
@@ -1330,19 +1198,8 @@ mod tests {
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_delete.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_delete.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3014,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker =
+            setup_broker("/tmp/test_domo_broker_test_websocket_delete.sqlite", 3014).await;
 
         domo_broker
             .domo_cache
@@ -1412,19 +1269,8 @@ mod tests {
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
 
-        let _remove = std::fs::remove_file("/tmp/test_domo_broker_test_websocket_pub.sqlite");
-
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file: String::from("/tmp/test_domo_broker_test_websocket_pub.sqlite"),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            http_port: 3015,
-            loopback_only: false,
-        };
-
-        let mut domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
+        let mut domo_broker =
+            setup_broker("/tmp/test_domo_broker_test_websocket_pub.sqlite", 3015).await;
 
         tokio::spawn(async move {
             let url = url::Url::parse("ws://localhost:3015/ws").unwrap();
