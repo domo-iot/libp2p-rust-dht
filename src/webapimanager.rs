@@ -20,8 +20,6 @@ use tokio::sync::{broadcast, mpsc, oneshot};
 
 use crate::restmessage;
 
-use std::net::SocketAddr;
-
 use tokio::sync::mpsc::Sender;
 
 use serde_json::json;
@@ -29,7 +27,7 @@ use serde_json::json;
 extern crate nix; // 0.11.0
 
 use nix::sys::socket::{self, sockopt::ReuseAddr, sockopt::ReusePort};
-use std::{error::Error, net::TcpListener, os::unix::io::AsRawFd};
+use std::{net::TcpListener, os::unix::io::AsRawFd};
 
 pub struct WebApiManager {
     // rest api listening port
