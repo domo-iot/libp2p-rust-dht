@@ -26,6 +26,11 @@ use tokio::sync::mpsc::Sender;
 
 use serde_json::json;
 
+extern crate nix; // 0.11.0
+
+use nix::sys::socket::{self, sockopt::ReuseAddr, sockopt::ReusePort};
+use std::{error::Error, net::TcpListener, os::unix::io::AsRawFd};
+
 pub struct WebApiManager {
     // rest api listening port
     pub http_port: u16,
@@ -45,7 +50,16 @@ pub struct WebApiManager {
 
 impl WebApiManager {
     pub fn new(http_port: u16) -> Self {
-        let addr = SocketAddr::from(([127, 0, 0, 1], http_port));
+        //let addr = SocketAddr::from(([127, 0, 0, 1], http_port));
+
+        let mut addr: String = "127.0.0.1:".to_owned();
+        addr.push_str(&http_port.to_string());
+
+        let listener = TcpListener::bind(addr).unwrap();
+
+        let mut _ret = socket::setsockopt(listener.as_raw_fd(), ReusePort, &true);
+
+        _ret = socket::setsockopt(listener.as_raw_fd(), ReuseAddr, &true);
 
         let (tx_rest, rx_rest) = mpsc::channel(32);
 
@@ -108,7 +122,8 @@ impl WebApiManager {
             );
 
         tokio::spawn(async move {
-            axum::Server::bind(&addr)
+            axum::Server::from_tcp(listener)
+                .unwrap()
                 .serve(app.into_make_service())
                 .await
         });
