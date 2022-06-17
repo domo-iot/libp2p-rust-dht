@@ -1,4 +1,5 @@
 use crate::domopersistentstorage::DomoPersistentStorage;
+
 use crate::utils;
 use chrono::prelude::*;
 use futures::prelude::*;
@@ -89,6 +90,39 @@ impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {
+    pub fn filter_with_topic_name(
+        &self,
+        topic_name: &str,
+        jsonpath_expr: &str,
+    ) -> Result<serde_json::Value, String> {
+        let mut ret = serde_json::json!([]);
+        match self.cache.get(topic_name) {
+            None => Ok(serde_json::json!([])),
+            Some(topic_map) => {
+                for (_topic_uuid, topic_value) in topic_map.iter() {
+                    let val = serde_json::json!(
+                        {
+                            "value": [topic_value.value]
+                        }
+                    );
+
+                    let result = jsonpath_lib::select(&val, jsonpath_expr);
+
+                    match result {
+                        Ok(res) => {
+                            for r in res {
+                                ret.as_array_mut().unwrap().push(r.clone());
+                            }
+                        }
+                        Err(e) => return Err(e.to_string()),
+                    };
+                }
+
+                Ok(ret)
+            }
+        }
+    }
+
     fn handle_volatile_data(
         &self,
         message: &str,
@@ -623,7 +657,6 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 }
 
 mod tests {
-
     #[cfg(test)]
     #[tokio::test]
     async fn test_delete() {
@@ -771,5 +804,90 @@ mod tests {
             .unwrap();
 
         assert_ne!(ret, val);
+    }
+
+    #[tokio::test]
+    async fn test_filter_topic_name() {
+        let storage = crate::domopersistentstorage::SqliteStorage::new(
+            "/tmp/test_filter_topic_name.sqlite",
+            true,
+        );
+
+        let shared_key =
+            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
+        let mut domo_cache = super::DomoCache::new(true, storage, shared_key, false).await;
+
+        domo_cache
+            .write_value(
+                "Domo::Light",
+                "one",
+                serde_json::json!(
+                    {
+                         "description": "first_light",
+                         "connected": false
+                    }
+                ),
+            )
+            .await;
+
+        domo_cache
+            .write_value(
+                "Domo::Light",
+                "two",
+                serde_json::json!(
+                    {
+                         "description": "second_light",
+                         "connected": true
+                    }
+                ),
+            )
+            .await;
+
+        domo_cache
+            .write_value(
+                "Domo::Light",
+                "three",
+                serde_json::json!(
+                    {
+                         "description": "third_light",
+                         "floor_number": 3
+                    }
+                ),
+            )
+            .await;
+
+        domo_cache
+            .write_value(
+                "Domo::Light",
+                "four",
+                serde_json::json!(
+                    {
+                         "description": "light_4",
+                         "categories": [1, 2]
+                    }
+                ),
+            )
+            .await;
+
+        let mut filter_exp = "$.value[?(@.floor_number && @.floor_number > 2)].description";
+
+        let values = domo_cache
+            .filter_with_topic_name("Domo::Light", filter_exp)
+            .unwrap();
+
+        let str_value = values.to_string();
+
+        assert_eq!(values, serde_json::json!(["third_light"]));
+
+        filter_exp =
+            "$.value[?(@.floor_number && @.floor_number > 2 && @.description ==\"third_light\")].description";
+
+        let values = domo_cache
+            .filter_with_topic_name("Domo::Light", filter_exp)
+            .unwrap();
+
+        let str_value = values.to_string();
+
+        assert_eq!(values, serde_json::json!(["third_light"]));
     }
 }
