@@ -98,13 +98,7 @@ impl DomoPersistentStorage for SqliteStorage {
             })
             .unwrap();
 
-        let mut ret = vec![];
-        for val in values_iter {
-            let v = val.unwrap();
-            ret.push(v);
-        }
-
-        ret
+        values_iter.collect::<Result<Vec<_>, _>>().unwrap()
     }
 }
 
