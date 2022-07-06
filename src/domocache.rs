@@ -321,7 +321,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             .gossipsub
             .publish(topic.clone(), m.as_bytes())
         {
-            log::info!("Publish error: {:?}", e);
+            log::info!("Publish error: {e:?}");
         } else {
             log::info!("Published cache hash");
         }
@@ -360,7 +360,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 match event {
 
                     SwarmEvent::ExpiredListenAddr { address, .. } => {
-                        log::info!("Address {:?} expired", address);
+                        log::info!("Address {address:?} expired");
                     }
                     SwarmEvent::ConnectionEstablished {..} => {
                             log::info!("Connection established ...");
@@ -378,7 +378,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         log::info!("Listener Closed");
                     }
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("Listening in {:?}", address);
+                        println!("Listening in {address:?}");
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
                         libp2p::gossipsub::GossipsubEvent::Message {
@@ -405,7 +405,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         let local = Utc::now();
 
                         for (peer, _) in list {
-                            log::info!("MDNS for peer {} expired {:?}", peer, local);
+                            log::info!("MDNS for peer {peer} expired {local:?}");
                         }
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
@@ -417,7 +417,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                                 .behaviour_mut()
                                 .gossipsub
                                 .add_explicit_peer(&peer);
-                            log::info!("Discovered peer {} {:?}", peer, local);
+                            log::info!("Discovered peer {peer} {local:?}");
                         }
 
                     }
@@ -503,7 +503,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             .gossipsub
             .publish(topic.clone(), m2.as_bytes())
         {
-            log::info!("Publish error: {:?}", e);
+            log::info!("Publish error: {e:?}");
         }
         if !republished {
             // signal a volatile pub by part of clients
@@ -519,10 +519,10 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             for (_, value) in topic_name_map.iter() {
                 if !value.deleted {
                     if first {
-                        println!("TopicName {} ", topic_name);
+                        println!("TopicName {topic_name}");
                         first = false;
                     }
-                    println!("{}", value);
+                    println!("{value}");
                 }
             }
         }
@@ -656,8 +656,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
     #[tokio::test]
     async fn test_delete() {
         let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
@@ -685,7 +685,6 @@ mod tests {
         assert_eq!(v, None);
     }
 
-    #[cfg(test)]
     #[tokio::test]
     async fn test_write_and_read_key() {
         let storage = crate::domopersistentstorage::SqliteStorage::new(
