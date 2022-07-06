@@ -274,6 +274,7 @@ impl DomoBroker {
     }
 }
 
+#[cfg(test)]
 mod tests {
     use crate::DomoBroker;
 
@@ -295,7 +296,6 @@ mod tests {
         domo_broker
     }
 
-    #[cfg(test)]
     #[tokio::test]
     async fn domo_broker_empty_cache() {
         use tokio::sync::mpsc;
