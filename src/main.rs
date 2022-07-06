@@ -120,19 +120,13 @@ async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut D
             domo_broker.domo_cache.print_peers_cache()
         }
         Some("DEL") => {
-            let topic_name = args.next();
-            let topic_uuid = args.next();
-
-            if topic_name == None || topic_uuid == None {
-                println!("topic_name, topic_uuid are mandatory arguments");
-            } else {
-                let topic_name = topic_name.unwrap();
-                let topic_uuid = topic_uuid.unwrap();
-
+            if let (Some(topic_name), Some(topic_uuid)) = (args.next(), args.next()) {
                 domo_broker
                     .domo_cache
                     .delete_value(topic_name, topic_uuid)
                     .await;
+            } else {
+                println!("topic_name, topic_uuid are mandatory arguments");
             }
         }
         Some("PUB") => {
@@ -147,19 +141,9 @@ async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut D
             domo_broker.domo_cache.pub_value(val).await;
         }
         Some("PUT") => {
-            let topic_name = args.next();
+            let arguments = (args.next(), args.next(), args.next());
 
-            let topic_uuid = args.next();
-
-            let value = args.next();
-
-            if topic_name == None || topic_uuid == None || value == None {
-                println!("topic_name, topic_uuid, values are mandatory arguments");
-            } else {
-                let topic_name = topic_name.unwrap();
-                let topic_uuid = topic_uuid.unwrap();
-                let value = value.unwrap();
-
+            if let (Some(topic_name), Some(topic_uuid), Some(value)) = arguments {
                 println!("{} {} {}", topic_name, topic_uuid, value);
 
                 let val = json!({ "payload": value });
@@ -168,6 +152,8 @@ async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut D
                     .domo_cache
                     .write_value(topic_name, topic_uuid, val)
                     .await;
+            } else {
+                println!("topic_name, topic_uuid, values are mandatory arguments");
             }
         }
         _ => {
