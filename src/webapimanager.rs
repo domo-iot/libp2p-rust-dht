@@ -298,7 +298,7 @@ impl WebApiManager {
                             match msg.unwrap() {
                                 Message::Text(message) => {
                                     // parso il messaggio
-                                    println!("Received command {}", message);
+                                    println!("Received command {message}");
 
                                     let req : SyncWebSocketDomoRequest = serde_json::from_str(&message).unwrap();
 
