@@ -87,10 +87,7 @@ impl DomoBroker {
 
                 let ret = self.domo_cache.get_topic_name(&topic_name);
 
-                let value = match ret {
-                    Ok(m) => m,
-                    Err(_e) => json!([]),
-                };
+                let value = ret.unwrap_or_else(|_| json!([]));
 
                 let resp = SyncWebSocketDomoRequest::Response { value };
 
@@ -110,10 +107,7 @@ impl DomoBroker {
                 println!("WebSocket RequestGetTopicUUID");
 
                 let ret = self.domo_cache.get_topic_uuid(&topic_name, &topic_uuid);
-                let value = match ret {
-                    Ok(m) => m,
-                    Err(_e) => json!({}),
-                };
+                let value = ret.unwrap_or_else(|_| json!({}));
 
                 let resp = SyncWebSocketDomoRequest::Response { value };
 
