@@ -656,8 +656,8 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     }
 }
 
+#[cfg(test)]
 mod tests {
-    #[cfg(test)]
     #[tokio::test]
     async fn test_delete() {
         let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
@@ -685,7 +685,6 @@ mod tests {
         assert_eq!(v, None);
     }
 
-    #[cfg(test)]
     #[tokio::test]
     async fn test_write_and_read_key() {
         let storage = crate::domopersistentstorage::SqliteStorage::new(

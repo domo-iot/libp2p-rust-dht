@@ -328,9 +328,8 @@ impl WebApiManager {
     }
 }
 
+#[cfg(test)]
 mod tests {
-
-    #[cfg(test)]
     #[tokio::test]
     async fn test_webapimanager_rest() {
         let mut webmanager = super::WebApiManager::new(1234);
