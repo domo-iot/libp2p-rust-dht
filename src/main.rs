@@ -143,7 +143,7 @@ async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut D
             let arguments = (args.next(), args.next(), args.next());
 
             if let (Some(topic_name), Some(topic_uuid), Some(value)) = arguments {
-                println!("{} {} {}", topic_name, topic_uuid, value);
+                println!("{topic_name} {topic_uuid} {value}");
 
                 let val = json!({ "payload": value });
 

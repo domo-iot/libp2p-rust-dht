@@ -259,7 +259,7 @@ impl DomoBroker {
                 DomoEvent::PersistentData(m2)
             }
             Ok(DomoEvent::VolatileData(m)) => {
-                println!("Volatile message {}", m);
+                println!("Volatile message {m}");
 
                 let m2 = m.clone();
                 let _ret = self
