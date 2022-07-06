@@ -101,11 +101,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
 async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut DomoBroker) {
     let line = match line {
-        Err(_e) => return,
-        Ok(s) => match s {
-            None => return,
-            Some(s) => s,
-        },
+        Err(_) | Ok(None) => return,
+        Ok(Some(s)) => s,
     };
 
     let mut args = line.split(' ');
