@@ -102,9 +102,8 @@ impl DomoPersistentStorage for SqliteStorage {
     }
 }
 
+#[cfg(test)]
 mod tests {
-
-    #[cfg(test)]
     #[test]
     #[should_panic]
     fn open_read_non_existent_file() {
