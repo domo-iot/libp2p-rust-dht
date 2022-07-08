@@ -576,20 +576,22 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         publish: bool,
     ) {
         {
-            // topic_name already present
-            if self.cache.contains_key(&cache_element.topic_name) {
-                self.cache
-                    .get_mut(&cache_element.topic_name)
-                    .unwrap()
-                    .insert(cache_element.topic_uuid.clone(), cache_element.clone());
+            // If topic_name is already present, insert into it,
+            // otherwise create a new map.
+            // We could be using the entry api here together with or_default,
+            // but it would require copying the key for the lookup, even if a
+            // reference would have been enough. We try to optimize more for
+            // the reading use case, instead of the writing use case, so we
+            // rather try to avoid the clone rather than the two map lookups.
+            // Once raw_entry APIs are available on stable Rust, we can switch
+            // to those.
+            if let Some(key) = self.cache.get_mut(&cache_element.topic_name) {
+                key.insert(cache_element.topic_uuid.clone(), cache_element.clone());
             } else {
                 // first time that we add an element of topic_name type
-                self.cache
-                    .insert(cache_element.topic_name.clone(), BTreeMap::new());
-                self.cache
-                    .get_mut(&cache_element.topic_name)
-                    .unwrap()
-                    .insert(cache_element.topic_uuid.clone(), cache_element.clone());
+                let mut map = BTreeMap::new();
+                map.insert(cache_element.topic_uuid.clone(), cache_element.clone());
+                self.cache.insert(cache_element.topic_name.clone(), map);
             }
 
             if persist {
