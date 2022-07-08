@@ -160,16 +160,15 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    // restituisce una tupla (is_synchronized, is_hash_leader)
-
+    /// Returns a tuple (is_synchronized, is_hash_leader)
     fn is_synchronized(
         &self,
         local_hash: u64,
         peers_caches_state: &BTreeMap<String, DomoCacheStateMessage>,
     ) -> (bool, bool) {
-        // se ci sono hashes diversi dal mio non è consistente
-        // verifico se sono il leader per l'hash
-
+        // If there are hashes different from the current node,
+        // the state is not consistent. Then we need to check
+        // whether we are the leaders for the current hash.
         if peers_caches_state
             .iter()
             .filter(|(_, data)| {
@@ -192,15 +191,15 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 .count()
                 > 0
             {
-                // non sono il leader dello hash
+                // Our node is not the leader of the hash
                 return (false, false);
             } else {
-                // sono il leader dello hash
+                // Our node is the leader of the hash
                 return (false, true);
             }
         }
 
-        // è sincronizzata
+        // We are synchronized
         (true, true)
     }
 
