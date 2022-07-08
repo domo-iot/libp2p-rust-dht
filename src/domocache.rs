@@ -7,7 +7,6 @@ use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::swarm::SwarmEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -185,7 +184,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 .iter()
                 .filter(|(peer_id, data)| {
                     (data.cache_hash == local_hash)
-                        && (self.local_peer_id.cmp(peer_id) == Ordering::Less)
+                        && (*self.local_peer_id < *peer_id.as_str())
                         && (data.publication_timestamp
                             > (utils::get_epoch_ms()
                                 - (1000 * 2 * u128::from(SEND_CACHE_HASH_PERIOD))))
