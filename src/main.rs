@@ -115,6 +115,7 @@ async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut D
         }
         Some("PRINT") => domo_broker.domo_cache.print(),
         Some("PEERS") => {
+            println!("Own peer ID: {}", domo_broker.domo_cache.local_peer_id);
             println!("Peers:");
             domo_broker.domo_cache.print_peers_cache()
         }
