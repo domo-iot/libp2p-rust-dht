@@ -7,7 +7,6 @@ use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::swarm::SwarmEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::error::Error;
@@ -161,16 +160,15 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    // restituisce una tupla (is_synchronized, is_hash_leader)
-
+    /// Returns a tuple (is_synchronized, is_hash_leader)
     fn is_synchronized(
         &self,
         local_hash: u64,
         peers_caches_state: &BTreeMap<String, DomoCacheStateMessage>,
     ) -> (bool, bool) {
-        // se ci sono hashes diversi dal mio non è consistente
-        // verifico se sono il leader per l'hash
-
+        // If there are hashes different from the current node,
+        // the state is not consistent. Then we need to check
+        // whether we are the leaders for the current hash.
         if peers_caches_state
             .iter()
             .filter(|(_, data)| {
@@ -185,7 +183,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 .iter()
                 .filter(|(peer_id, data)| {
                     (data.cache_hash == local_hash)
-                        && (self.local_peer_id.cmp(peer_id) == Ordering::Less)
+                        && (*self.local_peer_id < *peer_id.as_str())
                         && (data.publication_timestamp
                             > (utils::get_epoch_ms()
                                 - (1000 * 2 * u128::from(SEND_CACHE_HASH_PERIOD))))
@@ -193,15 +191,15 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                 .count()
                 > 0
             {
-                // non sono il leader dello hash
+                // Our node is not the leader of the hash
                 return (false, false);
             } else {
-                // sono il leader dello hash
+                // Our node is the leader of the hash
                 return (false, true);
             }
         }
 
-        // è sincronizzata
+        // We are synchronized
         (true, true)
     }
 
@@ -578,20 +576,22 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         publish: bool,
     ) {
         {
-            // topic_name already present
-            if self.cache.contains_key(&cache_element.topic_name) {
-                self.cache
-                    .get_mut(&cache_element.topic_name)
-                    .unwrap()
-                    .insert(cache_element.topic_uuid.clone(), cache_element.clone());
+            // If topic_name is already present, insert into it,
+            // otherwise create a new map.
+            // We could be using the entry api here together with or_default,
+            // but it would require copying the key for the lookup, even if a
+            // reference would have been enough. We try to optimize more for
+            // the reading use case, instead of the writing use case, so we
+            // rather try to avoid the clone rather than the two map lookups.
+            // Once raw_entry APIs are available on stable Rust, we can switch
+            // to those.
+            if let Some(key) = self.cache.get_mut(&cache_element.topic_name) {
+                key.insert(cache_element.topic_uuid.clone(), cache_element.clone());
             } else {
                 // first time that we add an element of topic_name type
-                self.cache
-                    .insert(cache_element.topic_name.clone(), BTreeMap::new());
-                self.cache
-                    .get_mut(&cache_element.topic_name)
-                    .unwrap()
-                    .insert(cache_element.topic_uuid.clone(), cache_element.clone());
+                let mut map = BTreeMap::new();
+                map.insert(cache_element.topic_uuid.clone(), cache_element.clone());
+                self.cache.insert(cache_element.topic_name.clone(), map);
             }
 
             if persist {

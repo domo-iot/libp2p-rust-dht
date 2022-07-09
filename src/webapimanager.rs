@@ -24,8 +24,6 @@ use tokio::sync::mpsc::Sender;
 
 use serde_json::json;
 
-extern crate nix; // 0.11.0
-
 use nix::sys::socket::{self, sockopt::ReuseAddr, sockopt::ReusePort};
 use std::{net::TcpListener, os::unix::io::AsRawFd};
 
