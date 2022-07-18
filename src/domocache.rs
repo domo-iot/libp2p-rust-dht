@@ -453,7 +453,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             client_rx_channel,
         };
 
-        // popolo la mia cache con il contenuto dello sqlite
+        // Populate the cache with the sqlite contents
 
         let ret = c.storage.get_all_elements();
 
