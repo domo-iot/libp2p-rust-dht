@@ -79,7 +79,7 @@ pub fn build_transport(
 pub async fn start(
     shared_key: String,
     loopback_only: bool,
-) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
+) -> Result<(Swarm<DomoBehaviour>, libp2p::identity::Keypair), Box<dyn Error>> {
     // Create a random key for ourselves.
     let local_key = identity::Keypair::generate_ed25519();
     let local_peer_id = PeerId::from(local_key.public());
@@ -126,7 +126,7 @@ pub async fn start(
 
         // build a gossipsub network behaviour
         let mut gossipsub: gossipsub::Gossipsub =
-            gossipsub::Gossipsub::new(MessageAuthenticity::Signed(local_key), gossipsub_config)
+            gossipsub::Gossipsub::new(MessageAuthenticity::Signed(local_key.clone()), gossipsub_config)
                 .expect("Correct configuration");
 
         // subscribes to persistent data topic
@@ -158,7 +158,7 @@ pub async fn start(
         swarm.listen_on("/ip4/127.0.0.1/tcp/0".parse()?)?;
     }
 
-    Ok(swarm)
+    Ok((swarm, local_key))
 }
 
 // We create a custom network behaviour that combines mDNS and gossipsub.

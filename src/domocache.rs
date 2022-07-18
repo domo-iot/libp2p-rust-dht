@@ -432,7 +432,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         shared_key: String,
         loopback_only: bool,
     ) -> Self {
-        let swarm = crate::domolibp2p::start(shared_key, loopback_only)
+        let (swarm, key_pair) = crate::domolibp2p::start(shared_key, loopback_only)
             .await
             .unwrap();
 
@@ -443,7 +443,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let mut c = DomoCache {
             is_persistent_cache,
             swarm,
-            local_peer_id: peer_id,
+            local_peer_id: peer_id.clone(),
             publish_cache_counter: 4,
             last_cache_repub_timestamp: 0,
             storage,
@@ -461,6 +461,14 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             // non ripubblico
             c.insert_cache_element(elem, false, false).await;
         }
+        let pub_key = serde_json::json!({
+            "domo-internal": true,
+            "kind": "public-key-announce",
+            "key": key_pair.public().to_protobuf_encoding(),
+        });
+
+        // Announce the public key
+        c.pub_value(pub_key).await;
 
         c
     }
