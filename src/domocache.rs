@@ -384,18 +384,19 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                             message_id: _id,
                             message,
                         },
-                    )) => {
-
-                        if message.topic.to_string() == "domo-persistent-data" {
+                    )) => match message.topic.to_string() {
+                        "domo-persistent-data" => {
                             return self.handle_persistent_message_data(&String::from_utf8_lossy(&message.data)).await;
-                        } else if message.topic.to_string() == "domo-config" {
+                        }
+                        "domo-config" => {
                             self.handle_config_data(&String::from_utf8_lossy(&message.data)).await;
-                        } else if message.topic.to_string() == "domo-volatile-data" {
+                        }
+                        "domo-volatile-data" => {
                             return self.handle_volatile_data(&String::from_utf8_lossy(&message.data));
                         }
-                            else {
-                                log::info!("Not able to recognize message");
-                            }
+                        _ => {
+                            log::info!("Not able to recognize message");
+                        }
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
                         libp2p::mdns::MdnsEvent::Expired(list),
