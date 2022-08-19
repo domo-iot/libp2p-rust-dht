@@ -50,7 +50,7 @@ impl WebApiManager {
     pub fn new(http_port: u16) -> Self {
         //let addr = SocketAddr::from(([127, 0, 0, 1], http_port));
 
-        let mut addr: String = "127.0.0.1:".to_owned();
+        let mut addr: String = "0.0.0.0:".to_owned();
         addr.push_str(&http_port.to_string());
 
         let listener = TcpListener::bind(addr).unwrap();
