@@ -19,16 +19,12 @@ impl SqliteStorage {
         let conn = if !write_access {
             match Connection::open_with_flags(&sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
                 Ok(conn) => conn,
-                _ => {
-                    panic!("Error while opening the sqlite DB");
-                }
+                Err(e) => panic!("Error while opening the sqlite DB: {e:?}"),
             }
         } else {
             let conn = match Connection::open(&sqlite_file) {
                 Ok(conn) => conn,
-                _ => {
-                    panic!("Error while opening the sqlite DB");
-                }
+                Err(e) => panic!("Error while opening the sqlite DB: {e:?}"),
             };
 
             let _ = conn
@@ -72,9 +68,7 @@ impl DomoPersistentStorage for SqliteStorage {
             ],
         ) {
             Ok(ret) => ret,
-            _ => {
-                panic!("Error while executing write operation on sqlite")
-            }
+            Err(e) => panic!("Error while executing write operation on sqlite: {e:?}"),
         };
     }
 
@@ -104,19 +98,12 @@ impl DomoPersistentStorage for SqliteStorage {
             })
             .unwrap();
 
-        let mut ret = vec![];
-        for val in values_iter {
-            let v = val.unwrap();
-            ret.push(v);
-        }
-
-        ret
+        values_iter.collect::<Result<Vec<_>, _>>().unwrap()
     }
 }
 
+#[cfg(test)]
 mod tests {
-
-    #[cfg(test)]
     #[test]
     #[should_panic]
     fn open_read_non_existent_file() {
