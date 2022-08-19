@@ -92,9 +92,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 }
             },
 
+            /*
             line = stdin.next_line() => {
                 handle_user_input(line, &mut domo_broker).await;
             }
+             */
         }
     }
 }
