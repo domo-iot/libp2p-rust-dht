@@ -24,3 +24,4 @@ url = "2.2.2"
 nix = "0.24.1"
 jsonpath_lib = "0.3.0"
 openssl = { version = '0.10', features = ["vendored"] }
+libsqlite3-sys = { version = "*", features = ["bundled"] }
