@@ -2,6 +2,7 @@ use crate::utils;
 
 use axum::{
     extract::Extension,
+    http,
     http::StatusCode,
     response::IntoResponse,
     routing::{delete, get, post},
@@ -11,6 +12,8 @@ use axum::{
 use axum::extract::ws::Message;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::Path;
+
+use tower_http::cors::{Any, Cors, CorsLayer};
 
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
@@ -24,6 +27,7 @@ use tokio::sync::mpsc::Sender;
 
 use serde_json::json;
 
+use axum::http::{HeaderValue, Method};
 use nix::sys::socket::{self, sockopt::ReuseAddr, sockopt::ReusePort};
 use std::{net::TcpListener, os::unix::io::AsRawFd};
 
@@ -115,6 +119,12 @@ impl WebApiManager {
                 get(WebApiManager::handle_websocket_req)
                     .layer(Extension(async_tx_websocket_copy))
                     .layer(Extension(sync_tx_websocket_copy)),
+            )
+            .layer(
+                CorsLayer::new()
+                    .allow_origin(Any)
+                    .allow_methods(Any)
+                    .allow_headers([http::header::CONTENT_TYPE]),
             );
 
         tokio::spawn(async move {
