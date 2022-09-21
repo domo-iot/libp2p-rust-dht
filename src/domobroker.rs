@@ -2,6 +2,7 @@ use crate::{
     restmessage, AsyncWebSocketDomoMessage, DomoCache, DomoEvent, SqliteStorage,
     SyncWebSocketDomoMessage, SyncWebSocketDomoRequest, WebApiManager,
 };
+use libp2p::identity;
 
 use std::error::Error;
 
@@ -28,10 +29,14 @@ impl DomoBroker {
 
         let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache);
 
+        // Create a random local key.
+        let local_key = identity::Keypair::generate_ed25519();
+
         let domo_cache = DomoCache::new(
             conf.is_persistent_cache,
             storage,
             conf.shared_key,
+            local_key,
             conf.loopback_only,
         )
         .await;

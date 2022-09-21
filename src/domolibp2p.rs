@@ -78,11 +78,10 @@ pub fn build_transport(
 
 pub async fn start(
     shared_key: String,
+    local_key_pair: identity::Keypair,
     loopback_only: bool,
 ) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
-    // Create a random key for ourselves.
-    let local_key = identity::Keypair::generate_ed25519();
-    let local_peer_id = PeerId::from(local_key.public());
+    let local_peer_id = PeerId::from(local_key_pair.public());
 
     // Create a Gossipsub topic
     let topic_persistent_data = Topic::new("domo-persistent-data");
@@ -95,7 +94,7 @@ pub async fn start(
         Err(_e) => panic!("Invalid key"),
     };
 
-    let transport = build_transport(local_key.clone(), psk);
+    let transport = build_transport(local_key_pair.clone(), psk);
 
     // Create a swarm to manage peers and events.
     let mut swarm = {
@@ -125,9 +124,11 @@ pub async fn start(
             .expect("Valid config");
 
         // build a gossipsub network behaviour
-        let mut gossipsub: gossipsub::Gossipsub =
-            gossipsub::Gossipsub::new(MessageAuthenticity::Signed(local_key), gossipsub_config)
-                .expect("Correct configuration");
+        let mut gossipsub: gossipsub::Gossipsub = gossipsub::Gossipsub::new(
+            MessageAuthenticity::Signed(local_key_pair),
+            gossipsub_config,
+        )
+        .expect("Correct configuration");
 
         // subscribes to persistent data topic
         gossipsub.subscribe(&topic_persistent_data).unwrap();

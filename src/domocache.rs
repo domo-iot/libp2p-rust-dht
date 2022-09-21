@@ -4,6 +4,7 @@ use crate::utils;
 use chrono::prelude::*;
 use futures::prelude::*;
 use libp2p::gossipsub::IdentTopic as Topic;
+use libp2p::identity::Keypair;
 use libp2p::swarm::SwarmEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -430,9 +431,10 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         is_persistent_cache: bool,
         storage: T,
         shared_key: String,
+        local_key_pair: Keypair,
         loopback_only: bool,
     ) -> Self {
-        let swarm = crate::domolibp2p::start(shared_key, loopback_only)
+        let swarm = crate::domolibp2p::start(shared_key, local_key_pair, loopback_only)
             .await
             .unwrap();
 
