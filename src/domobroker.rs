@@ -7,6 +7,7 @@ use crate::webapimanager::WebApiManager;
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
+use libp2p::identity;
 use serde_json::json;
 
 pub struct DomoBroker {
@@ -30,10 +31,14 @@ impl DomoBroker {
 
         let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache);
 
+        // Create a random local key.
+        let local_key = identity::Keypair::generate_ed25519();
+
         let domo_cache = DomoCache::new(
             conf.is_persistent_cache,
             storage,
             conf.shared_key,
+            local_key,
             conf.loopback_only,
         )
         .await;
