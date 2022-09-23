@@ -1,3 +1,4 @@
+use crate::domopersistentstorage::DomoPersistentStorage;
 use crate::{
     restmessage, AsyncWebSocketDomoMessage, DomoCache, DomoEvent, SqliteStorage,
     SyncWebSocketDomoMessage, SyncWebSocketDomoRequest, WebApiManager,
@@ -27,13 +28,28 @@ impl DomoBroker {
             return Err(String::from("sqlite_file path needed"));
         }
 
-        let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache);
+        let write_access = conf.is_persistent_cache;
 
-        // Create a random local key.
-        let local_key = identity::Keypair::generate_ed25519();
+        let mut storage = SqliteStorage::new(conf.sqlite_file, write_access);
+
+        // Obtain a local key either from the db or generate it.
+        let key_opt = storage.get_keys().into_iter().find(|(i, _)| i == "ed25519");
+        let local_key = if let Some((key, _)) = key_opt {
+            let mut bytes = base64::decode(key).unwrap();
+            let kp = identity::ed25519::Keypair::decode(&mut bytes).unwrap();
+            kp
+        } else {
+            let local_key = identity::ed25519::Keypair::generate();
+            if write_access {
+                let key_base64 = base64::encode(local_key.encode());
+                storage.store_key("ed25519".to_string(), key_base64);
+            }
+            local_key
+        };
+        let local_key = identity::Keypair::Ed25519(local_key);
 
         let domo_cache = DomoCache::new(
-            conf.is_persistent_cache,
+            write_access,
             storage,
             conf.shared_key,
             local_key,

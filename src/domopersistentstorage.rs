@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 pub trait DomoPersistentStorage {
     fn store(&mut self, element: &DomoCacheElement);
     fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
+    fn store_key(&mut self, id: String, key: String);
+    fn get_keys(&mut self) -> Vec<(String, String)>;
 }
 
 pub struct SqliteStorage {
@@ -27,9 +29,8 @@ impl SqliteStorage {
                 Err(e) => panic!("Error while opening the sqlite DB: {e:?}"),
             };
 
-            let _ = conn
-                .execute(
-                    "CREATE TABLE IF NOT EXISTS domo_data (
+            let _ = conn.execute(
+                "CREATE TABLE IF NOT EXISTS domo_data (
                   topic_name             TEXT,
                   topic_uuid             TEXT,
                   value                  TEXT,
@@ -38,9 +39,16 @@ impl SqliteStorage {
                   publisher_peer_id       TEXT,
                   PRIMARY KEY (topic_name, topic_uuid)
                   )",
-                    [],
-                )
-                .unwrap();
+                [],
+            );
+            let _ = conn.execute(
+                "CREATE TABLE IF NOT EXISTS domo_keys (
+                  key_id  TEXT,
+                  key     TEXT,
+                  PRIMARY KEY (key_id)
+                  )",
+                [],
+            );
 
             conn
         };
@@ -95,6 +103,37 @@ impl DomoPersistentStorage for SqliteStorage {
                     publisher_peer_id: row.get(5)?,
                     republication_timestamp: 0,
                 })
+            })
+            .unwrap();
+
+        values_iter.collect::<Result<Vec<_>, _>>().unwrap()
+    }
+    fn store_key(&mut self, id: String, key: String) {
+        match self.sqlite_connection.execute(
+            "INSERT OR REPLACE INTO domo_keys\
+             (key_id, key)\
+              VALUES (?1, ?2)",
+            params![id, key,],
+        ) {
+            Ok(_ret) => (),
+            Err(e) => panic!("Error while executing write operation on sqlite: {e:?}"),
+        }
+    }
+    fn get_keys(&mut self) -> Vec<(String, String)> {
+        let mut stmt = if let Ok(s) = self
+            .sqlite_connection
+            .prepare("SELECT (key_id, key) FROM domo_keys")
+        {
+            s
+        } else {
+            return Vec::new();
+        };
+
+        let values_iter = stmt
+            .query_map([], |row| {
+                let key_id: String = row.get(0)?;
+                let key: String = row.get(1)?;
+                Ok((key_id, key))
             })
             .unwrap();
 
