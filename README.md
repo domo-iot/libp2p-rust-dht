@@ -8,7 +8,7 @@ where:
 
 SQLITE_FILE: absolute path of the sqlite file where persistent messages published on the DHT are stored.
 
-IS_PERSISTENT_CACHE: if set to true indicates that domo-libp2p is authorized to write messages to the provided sqlite file. If set to false, the SQLITE_FILE content will only be used to initialize the cache.
+IS_PERSISTENT_CACHE: if set to true indicates that sifis-dht is authorized to write messages to the provided sqlite file. If set to false, the SQLITE_FILE content will only be used to initialize the cache.
 
 SHARED_KEY: 32 bytes long shared key in hex format (command "openssl rand -hex 32" can be used to generate a random key)
 
