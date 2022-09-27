@@ -13,7 +13,7 @@ use axum::extract::ws::Message;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::Path;
 
-use tower_http::cors::{Any, Cors, CorsLayer};
+use tower_http::cors::{Any, CorsLayer};
 
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
@@ -27,7 +27,6 @@ use tokio::sync::mpsc::Sender;
 
 use serde_json::json;
 
-use axum::http::{HeaderValue, Method};
 use nix::sys::socket::{self, sockopt::ReuseAddr, sockopt::ReusePort};
 use std::{net::TcpListener, os::unix::io::AsRawFd};
 

@@ -27,7 +27,7 @@ pub enum DomoEvent {
 // period at which we send messages containing our cache hash
 const SEND_CACHE_HASH_PERIOD: u8 = 5;
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DomoCacheElement {
     pub topic_name: String,
     pub topic_uuid: String,
@@ -38,7 +38,7 @@ pub struct DomoCacheElement {
     pub republication_timestamp: u128,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DomoCacheStateMessage {
     pub peer_id: String,
     pub cache_hash: u64,
@@ -89,6 +89,7 @@ impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
 }
 
 impl<T: DomoPersistentStorage> DomoCache<T> {
+    #[allow(unused)]
     pub fn filter_with_topic_name(
         &self,
         topic_name: &str,
