@@ -132,7 +132,7 @@ async fn handle_user_input(line: io::Result<Option<String>>, domo_broker: &mut D
         Some("PUB") => {
             let value = args.next();
 
-            if value == None {
+            if value.is_none() {
                 println!("value is mandatory");
             }
 

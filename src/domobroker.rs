@@ -124,7 +124,7 @@ impl DomoBroker {
                 topic_name,
                 topic_uuid,
             } => {
-                let _ret = self.domo_cache.delete_value(&topic_name, &topic_uuid).await;
+                self.domo_cache.delete_value(&topic_name, &topic_uuid).await;
                 println!("WebSocket RequestDeleteTopicUUID");
             }
 
@@ -135,15 +135,14 @@ impl DomoBroker {
             } => {
                 println!("WebSocket RequestPostTopicUUID");
 
-                let _ret = self
-                    .domo_cache
+                self.domo_cache
                     .write_value(&topic_name, &topic_uuid, value.clone())
                     .await;
             }
 
             SyncWebSocketDomoRequest::RequestPubMessage { value } => {
                 println!("WebSocket RequestPubMessage");
-                let _ret = self.domo_cache.pub_value(value.clone()).await;
+                self.domo_cache.pub_value(value.clone()).await;
             }
 
             _ => {}
