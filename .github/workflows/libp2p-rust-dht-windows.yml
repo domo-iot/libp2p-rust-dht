@@ -9,10 +9,10 @@ name: libp2p-rust-dht-windows
 on:
   push:
     branches:
-      - main
+      - master
   pull_request:
     branches:
-      - main
+      - master
 
 jobs:
   clippy-rustfmt:
@@ -160,7 +160,7 @@ jobs:
       env:
         GRCOV_LINK: https://github.com/mozilla/grcov/releases/download
         GRCOV_VERSION: v0.8.7
-        GRCOV_BINARY: grcov-x86_64-pc-windows-msvc.zip 
+        GRCOV_BINARY: grcov-x86_64-pc-windows-msvc.zip
       run: |
         curl -LO "$Env:GRCOV_LINK/$Env:GRCOV_VERSION/$Env:GRCOV_BINARY"
         7z e -y "$Env:GRCOV_BINARY" -o"${env:USERPROFILE}\.cargo\bin"
