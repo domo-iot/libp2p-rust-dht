@@ -70,6 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
+    let debug_console = std::env::var("DHT_DEBUG_CONSOLE").is_ok();
 
     let domo_broker_conf = DomoBrokerConf {
         sqlite_file,
@@ -81,22 +82,34 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let mut domo_broker = DomoBroker::new(domo_broker_conf).await?;
 
-    loop {
-        tokio::select! {
-            m = domo_broker.event_loop() => {
-                println!("Domo Event received");
-                match m {
-                    DomoEvent:: None => {},
-                    DomoEvent::VolatileData(_v) => { println!("Volatile"); },
-                    DomoEvent::PersistentData(_v) => { println!("Persistent"); },
-                }
-            },
+    if debug_console {
+        loop {
+            tokio::select! {
+                m = domo_broker.event_loop() => report_event(&m),
 
-            /*
-            line = stdin.next_line() => {
-                handle_user_input(line, &mut domo_broker).await;
+                line = stdin.next_line() => {
+                    handle_user_input(line, &mut domo_broker).await;
+                },
             }
-             */
+        }
+    } else {
+        loop {
+            tokio::select! {
+                m = domo_broker.event_loop() => report_event(&m),
+            }
+        }
+    }
+}
+
+fn report_event(m: &DomoEvent) {
+    println!("Domo Event received");
+    match m {
+        DomoEvent::None => {}
+        DomoEvent::VolatileData(_v) => {
+            println!("Volatile");
+        }
+        DomoEvent::PersistentData(_v) => {
+            println!("Persistent");
         }
     }
 }
