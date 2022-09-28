@@ -284,9 +284,7 @@ mod tests {
             loopback_only: false,
         };
 
-        let domo_broker = super::DomoBroker::new(domo_broker_conf).await.unwrap();
-
-        domo_broker
+        super::DomoBroker::new(domo_broker_conf).await.unwrap()
     }
 
     #[tokio::test]
@@ -759,11 +757,8 @@ mod tests {
             tokio::select! {
                 m = domo_broker.event_loop() => {
 
-                    match m {
-                        DomoEvent::VolatileData( value ) => {
-                            assert_eq!(value, serde_json::json!({"message": "hello"}));
-                        },
-                        _ => {}
+                    if let DomoEvent::VolatileData( value ) = m {
+                        assert_eq!(value, serde_json::json!({"message": "hello"}));
                     }
                 },
                 _result = rx_rest.recv() => {
@@ -801,23 +796,20 @@ mod tests {
 
             let msg = read.next().await.unwrap().unwrap();
 
-            match msg {
-                Message::Text(text) => {
-                    let expected = serde_json::json!(
-                        {
-                            "Response": {
-                                "value": []
-                            }
+            if let Message::Text(text) = msg {
+                let expected = serde_json::json!(
+                    {
+                        "Response": {
+                            "value": []
                         }
-                    );
-
-                    let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
-
-                    if rcv_value == expected {
-                        let _ret = tx_rest.send("OK").await;
                     }
+                );
+
+                let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+                if rcv_value == expected {
+                    let _ret = tx_rest.send("OK").await;
                 }
-                _ => {}
             }
         });
 
@@ -873,40 +865,37 @@ mod tests {
 
             let msg = read.next().await.unwrap().unwrap();
 
-            match msg {
-                Message::Text(text) => {
-                    let expected = serde_json::json!(
-                        {
-                            "Response": {
-                                "value": [
+            if let Message::Text(text) = msg {
+                let expected = serde_json::json!(
+                    {
+                        "Response": {
+                            "value": [
 
-                                {
-                                    "topic_name": "Domo::Light",
-                                    "topic_uuid": "due",
-                                    "value": {
-                                        "connected": true
-                                    }
-                                },
-                                {
-                                    "topic_name": "Domo::Light",
-                                    "topic_uuid": "uno",
-                                    "value": {
-                                        "connected": true
-                                    }
+                            {
+                                "topic_name": "Domo::Light",
+                                "topic_uuid": "due",
+                                "value": {
+                                    "connected": true
                                 }
-
-                                ]
+                            },
+                            {
+                                "topic_name": "Domo::Light",
+                                "topic_uuid": "uno",
+                                "value": {
+                                    "connected": true
+                                }
                             }
+
+                            ]
                         }
-                    );
-
-                    let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
-
-                    if rcv_value == expected {
-                        let _ret = tx_rest.send("OK").await;
                     }
+                );
+
+                let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+                if rcv_value == expected {
+                    let _ret = tx_rest.send("OK").await;
                 }
-                _ => {}
             }
         });
 
@@ -974,32 +963,29 @@ mod tests {
 
             let msg = read.next().await.unwrap().unwrap();
 
-            match msg {
-                Message::Text(text) => {
-                    let expected = serde_json::json!(
-                        {
-                            "Response": {
-                                "value": [
-                                {
-                                    "topic_name": "Domo::Light",
-                                    "topic_uuid": "uno",
-                                    "value": {
-                                        "connected": true
-                                    }
+            if let Message::Text(text) = msg {
+                let expected = serde_json::json!(
+                    {
+                        "Response": {
+                            "value": [
+                            {
+                                "topic_name": "Domo::Light",
+                                "topic_uuid": "uno",
+                                "value": {
+                                    "connected": true
                                 }
-
-                                ]
                             }
+
+                            ]
                         }
-                    );
-
-                    let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
-
-                    if rcv_value == expected {
-                        let _ret = tx_rest.send("OK").await;
                     }
+                );
+
+                let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+                if rcv_value == expected {
+                    let _ret = tx_rest.send("OK").await;
                 }
-                _ => {}
             }
         });
 
@@ -1068,31 +1054,28 @@ mod tests {
 
             let msg = read.next().await.unwrap().unwrap();
 
-            match msg {
-                Message::Text(text) => {
-                    let expected = serde_json::json!(
-                        {
-                            "Response": {
-                                "value":
-                                {
-                                    "topic_name": "Domo::Light",
-                                    "topic_uuid": "uno",
-                                    "value": {
-                                        "connected": true
-                                    }
+            if let Message::Text(text) = msg {
+                let expected = serde_json::json!(
+                    {
+                        "Response": {
+                            "value":
+                            {
+                                "topic_name": "Domo::Light",
+                                "topic_uuid": "uno",
+                                "value": {
+                                    "connected": true
                                 }
-
                             }
+
                         }
-                    );
-
-                    let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
-
-                    if rcv_value == expected {
-                        let _ret = tx_rest.send("OK").await;
                     }
+                );
+
+                let rcv_value: serde_json::Value = serde_json::from_str(&text).unwrap();
+
+                if rcv_value == expected {
+                    let _ret = tx_rest.send("OK").await;
                 }
-                _ => {}
             }
         });
 
@@ -1145,21 +1128,18 @@ mod tests {
 
             let msg = read.next().await.unwrap().unwrap();
 
-            match msg {
-                Message::Text(text) => {
-                    let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
-                        topic_name: "Domo::Light".to_owned(),
-                        topic_uuid: "uno".to_owned(),
-                        value: serde_json::json!({"connected": true}),
-                        deleted: false,
-                    })
-                    .unwrap();
+            if let Message::Text(text) = msg {
+                let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
+                    topic_name: "Domo::Light".to_owned(),
+                    topic_uuid: "uno".to_owned(),
+                    value: serde_json::json!({"connected": true}),
+                    deleted: false,
+                })
+                .unwrap();
 
-                    if text == expected {
-                        let _ret = tx_rest.send("OK").await;
-                    }
+                if text == expected {
+                    let _ret = tx_rest.send("OK").await;
                 }
-                _ => {}
             }
         });
 
@@ -1216,21 +1196,18 @@ mod tests {
 
             let msg = read.next().await.unwrap().unwrap();
 
-            match msg {
-                Message::Text(text) => {
-                    let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
-                        topic_name: "Domo::Light".to_owned(),
-                        topic_uuid: "uno".to_owned(),
-                        value: serde_json::Value::Null,
-                        deleted: true,
-                    })
-                    .unwrap();
+            if let Message::Text(text) = msg {
+                let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
+                    topic_name: "Domo::Light".to_owned(),
+                    topic_uuid: "uno".to_owned(),
+                    value: serde_json::Value::Null,
+                    deleted: true,
+                })
+                .unwrap();
 
-                    if text == expected {
-                        let _ret = tx_rest.send("OK").await;
-                    }
+                if text == expected {
+                    let _ret = tx_rest.send("OK").await;
                 }
-                _ => {}
             }
         });
 
@@ -1281,18 +1258,15 @@ mod tests {
 
             let msg = read.next().await.unwrap().unwrap();
 
-            match msg {
-                Message::Text(text) => {
-                    let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Volatile {
-                        value: serde_json::json!({"message": "hello"}),
-                    })
-                    .unwrap();
+            if let Message::Text(text) = msg {
+                let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Volatile {
+                    value: serde_json::json!({"message": "hello"}),
+                })
+                .unwrap();
 
-                    if text == expected {
-                        let _ret = tx_rest.send("OK").await;
-                    }
+                if text == expected {
+                    let _ret = tx_rest.send("OK").await;
                 }
-                _ => {}
             }
         });
 
