@@ -255,4 +255,4 @@ jobs:
 
     - name: Run cargo-audit
       run: |
-        cargo audit
+        cargo audit --ignore RUSTSEC-2020-0071
