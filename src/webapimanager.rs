@@ -27,8 +27,7 @@ use tokio::sync::mpsc::Sender;
 
 use serde_json::json;
 
-use nix::sys::socket::{self, sockopt::ReuseAddr, sockopt::ReusePort};
-use std::{net::TcpListener, os::unix::io::AsRawFd};
+use std::net::TcpListener;
 
 pub struct WebApiManager {
     // rest api listening port
@@ -56,9 +55,14 @@ impl WebApiManager {
 
         let listener = TcpListener::bind(addr).unwrap();
 
-        let mut _ret = socket::setsockopt(listener.as_raw_fd(), ReusePort, &true);
+        #[cfg(unix)]
+        {
+            use nix::sys::socket::{self, sockopt::ReuseAddr, sockopt::ReusePort};
+            use std::os::unix::io::AsRawFd;
+            _ = socket::setsockopt(listener.as_raw_fd(), ReusePort, &true);
 
-        _ret = socket::setsockopt(listener.as_raw_fd(), ReuseAddr, &true);
+            _ = socket::setsockopt(listener.as_raw_fd(), ReuseAddr, &true);
+        }
 
         let (tx_rest, rx_rest) = mpsc::channel(32);
 
