@@ -876,7 +876,7 @@ mod tests {
             .filter_with_topic_name("Domo::Light", filter_exp)
             .unwrap();
 
-        let str_value = values.to_string();
+        let _str_value = values.to_string();
 
         assert_eq!(values, serde_json::json!(["third_light"]));
 
@@ -887,7 +887,7 @@ mod tests {
             .filter_with_topic_name("Domo::Light", filter_exp)
             .unwrap();
 
-        let str_value = values.to_string();
+        let _str_value = values.to_string();
 
         assert_eq!(values, serde_json::json!(["third_light"]));
     }
