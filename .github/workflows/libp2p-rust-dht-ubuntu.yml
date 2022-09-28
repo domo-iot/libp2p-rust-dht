@@ -191,30 +191,22 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
         toolchain: nightly
-        components: miri, rust-src
+        components: rust-src
         override: true
 
     # FIXME Use binaries
-    - name: Install cargo-fuzz
+    - name: Install cargo-fuzz and cargo-careful
       if: steps.cache-data.outputs.cache-hit != 'true'
       run: |
-        cargo install cargo-fuzz
+        cargo install cargo-fuzz |
+        cargo install cargo-careful
 
     - name: Run miri
       env:
         # -Zrandomize-layout makes sure not to rely on the layout of anything
         # that might change
         RUSTFLAGS: -Zrandomize-layout
-        # -Zmiri-check-number-validity enables checking of integer and float
-        # validity (e.g., they must be initialized and not carry
-        # pointer provenance) as part of enforcing validity invariants.
-        # -Zmiri-tag-raw-pointers enables a lot of extra UB checks relating
-        # to raw pointer aliasing rules.
-        # -Zmiri-symbolic-alignment-check makes the alignment check more strict.
-        MIRIFLAGS: >
-          -Zmiri-check-number-validity -Zmiri-tag-raw-pointers
-          -Zmiri-symbolic-alignment-check
-      run: cargo miri test
+      run: cargo careful test
 
     # FIXME Create a template with a dummy series of fuzzy tests
     - name: Init cargo-fuzz
