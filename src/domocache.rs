@@ -669,7 +669,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 mod tests {
     #[tokio::test]
     async fn test_delete() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new("./prova.sqlite", true);
+        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
@@ -698,10 +698,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_and_read_key() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new(
-            "/tmp/test_write_and_read.sqlite",
-            true,
-        );
+        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let local_key = super::Keypair::generate_ed25519();
@@ -725,10 +722,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_twice_same_key() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new(
-            "/tmp/test_write_twice_same_key.sqlite",
-            true,
-        );
+        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let local_key = super::Keypair::generate_ed25519();
@@ -768,10 +762,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_old_timestamp() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new(
-            "/tmp/test_write_old_timestamp.sqlite",
-            true,
-        );
+        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
         let local_key = super::Keypair::generate_ed25519();
@@ -824,10 +815,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_filter_topic_name() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new(
-            "/tmp/test_filter_topic_name.sqlite",
-            true,
-        );
+        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");

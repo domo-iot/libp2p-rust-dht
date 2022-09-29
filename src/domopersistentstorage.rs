@@ -4,6 +4,8 @@ use crate::domocache::DomoCacheElement;
 
 use std::path::{Path, PathBuf};
 
+pub const SQLITE_MEMORY_STORAGE: &str = "<memory>";
+
 pub trait DomoPersistentStorage {
     fn store(&mut self, element: &DomoCacheElement);
     fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
@@ -15,35 +17,42 @@ pub struct SqliteStorage {
 }
 
 impl SqliteStorage {
+    #[cfg(test)]
+    pub fn new_in_memory() -> Self {
+        Self::new(SQLITE_MEMORY_STORAGE, true)
+    }
     pub fn new<P: AsRef<Path>>(sqlite_file: P, write_access: bool) -> Self {
-        let conn = if !write_access {
-            match Connection::open_with_flags(&sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY) {
-                Ok(conn) => conn,
-                Err(e) => panic!("Error while opening the sqlite DB: {e:?}"),
+        let conn_res = if sqlite_file.as_ref().to_str() == Some(SQLITE_MEMORY_STORAGE) {
+            if !write_access {
+                panic!("Can't open in-memory database read-only!");
             }
+            Connection::open_in_memory()
+        } else if !write_access {
+            Connection::open_with_flags(&sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY)
         } else {
-            let conn = match Connection::open(&sqlite_file) {
-                Ok(conn) => conn,
-                Err(e) => panic!("Error while opening the sqlite DB: {e:?}"),
-            };
+            Connection::open(&sqlite_file)
+        };
 
-            let _ = conn
+        let conn = match conn_res {
+            Ok(conn) => conn,
+            Err(e) => panic!("Error while opening the sqlite DB: {e:?}"),
+        };
+        if write_access {
+            _ = conn
                 .execute(
                     "CREATE TABLE IF NOT EXISTS domo_data (
-                  topic_name             TEXT,
-                  topic_uuid             TEXT,
-                  value                  TEXT,
-                  deleted                INTEGER,
-                  publication_timestamp   TEXT,
-                  publisher_peer_id       TEXT,
-                  PRIMARY KEY (topic_name, topic_uuid)
-                  )",
+                topic_name             TEXT,
+                topic_uuid             TEXT,
+                value                  TEXT,
+                deleted                INTEGER,
+                publication_timestamp   TEXT,
+                publisher_peer_id       TEXT,
+                PRIMARY KEY (topic_name, topic_uuid)
+                )",
                     [],
                 )
                 .unwrap();
-
-            conn
-        };
+        }
 
         SqliteStorage {
             sqlite_file: sqlite_file.as_ref().to_path_buf(),
@@ -106,25 +115,27 @@ impl DomoPersistentStorage for SqliteStorage {
 mod tests {
     #[test]
     #[should_panic]
-    fn open_read_non_existent_file() {
-        let _s = super::SqliteStorage::new("/tmp/aaskdjkasdka.sqlite", false);
+    fn open_read_from_memory() {
+        let _s = super::SqliteStorage::new(super::SQLITE_MEMORY_STORAGE, false);
     }
 
     #[test]
-    fn open_write_non_existent_file() {
-        let s = super::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
-        assert_eq!(
-            s.sqlite_file,
-            std::path::Path::new("/tmp/nkasjkldjad.sqlite")
-        );
+    #[should_panic]
+    fn open_read_non_existent_file() {
+        let _s = super::SqliteStorage::new("aaskdjkasdka.sqlite", false);
+    }
+
+    #[test]
+    fn open_write_new_file() {
+        let s = super::SqliteStorage::new_in_memory();
+        assert_eq!(s.sqlite_file.to_str(), Some(super::SQLITE_MEMORY_STORAGE));
     }
 
     #[test]
     fn test_initial_get_all_elements() {
         use super::DomoPersistentStorage;
 
-        let mut s =
-            crate::domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjad.sqlite", true);
+        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory();
         let v = s.get_all_elements();
         assert_eq!(v.len(), 0);
     }
@@ -132,8 +143,7 @@ mod tests {
     #[test]
     fn test_store() {
         use super::DomoPersistentStorage;
-        let mut s =
-            crate::domopersistentstorage::SqliteStorage::new("/tmp/nkasjkldjsdasd.sqlite", true);
+        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory();
 
         let m = crate::domocache::DomoCacheElement {
             topic_name: "a".to_string(),
