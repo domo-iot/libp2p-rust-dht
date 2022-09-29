@@ -1,10 +1,12 @@
-use crate::{
-    restmessage, AsyncWebSocketDomoMessage, DomoCache, DomoEvent, SqliteStorage,
-    SyncWebSocketDomoMessage, SyncWebSocketDomoRequest, WebApiManager,
-};
-
 use std::error::Error;
 
+use crate::domocache::{DomoCache, DomoEvent};
+use crate::domopersistentstorage::SqliteStorage;
+use crate::restmessage;
+use crate::webapimanager::WebApiManager;
+use crate::websocketmessage::{
+    AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
+};
 use serde_json::json;
 
 pub struct DomoBroker {
@@ -269,7 +271,8 @@ impl DomoBroker {
 
 #[cfg(test)]
 mod tests {
-    use crate::DomoBroker;
+    use crate::domobroker::DomoBroker;
+    use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
 
     async fn setup_broker(sqlite_file: &str, http_port: u16) -> DomoBroker {
         let _remove = std::fs::remove_file(sqlite_file);
@@ -921,8 +924,6 @@ mod tests {
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-        use crate::SyncWebSocketDomoRequest;
-
         use tokio::sync::mpsc;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
@@ -1010,8 +1011,6 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-
-        use crate::SyncWebSocketDomoRequest;
 
         use tokio::sync::mpsc;
 
@@ -1101,8 +1100,6 @@ mod tests {
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
 
-        use crate::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
-
         use tokio::sync::mpsc;
 
         let (tx_rest, mut rx_rest) = mpsc::channel(1);
@@ -1164,8 +1161,6 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-
-        use crate::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
 
         use tokio::sync::mpsc;
 
@@ -1232,8 +1227,6 @@ mod tests {
         use futures_util::{SinkExt, StreamExt};
 
         use tokio_tungstenite::{connect_async, tungstenite::protocol::Message};
-
-        use crate::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
 
         use tokio::sync::mpsc;
 

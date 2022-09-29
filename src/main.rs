@@ -1,32 +1,14 @@
-mod domobroker;
-mod domocache;
-mod domolibp2p;
-mod domopersistentstorage;
-mod restmessage;
-mod utils;
-mod webapimanager;
-mod websocketmessage;
-
 use serde_json::json;
 
 use std::error::Error;
 
 use chrono::prelude::*;
 
-use domopersistentstorage::SqliteStorage;
-
 use tokio::io::{self, AsyncBufReadExt};
 
-use crate::domocache::{DomoCache, DomoEvent};
-
-use crate::webapimanager::WebApiManager;
-
-use crate::domobroker::{DomoBroker, DomoBrokerConf};
 use clap::Parser;
-
-use crate::websocketmessage::{
-    AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
-};
+use sifis_dht::domobroker::{DomoBroker, DomoBrokerConf};
+use sifis_dht::domocache::DomoEvent;
 
 #[derive(Parser, Debug)]
 struct Opt {
