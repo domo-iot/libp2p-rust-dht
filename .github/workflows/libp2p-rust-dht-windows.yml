@@ -60,8 +60,7 @@ jobs:
       run: cargo build --verbose --tests --benches
 
     - name: Run tests
-      run: cargo test --verbose --no-run
-    # cargo test --verbose https://github.com/domo-iot/libp2p-rust-dht/issues/4
+      run: cargo test --verbose
 
     - name: Generate docs
       run: cargo doc --no-deps
@@ -98,13 +97,12 @@ jobs:
       run: |
         cargo install cargo-careful
 
-    # https://github.com/domo-iot/libp2p-rust-dht/issues/4
-    #- name: Run cargo careful
-    #  env:
-    #    # -Zrandomize-layout makes sure not to rely on the layout of anything
-    #    # that might change
-    #    RUSTFLAGS: -Zrandomize-layout
-    #  run: cargo careful test
+    - name: Run cargo careful
+      env:
+        # -Zrandomize-layout makes sure not to rely on the layout of anything
+        # that might change
+        RUSTFLAGS: -Zrandomize-layout
+      run: cargo careful test
 
   static-code-analysis:
 
@@ -181,8 +179,7 @@ jobs:
         RUSTFLAGS: "-Cinstrument-coverage"
         LLVM_PROFILE_FILE: "libp2p-rust-dht-%p-%m.profraw"
       run: |
-        cargo test --verbose --no-run
-      # cargo test --verbose https://github.com/domo-iot/libp2p-rust-dht/issues/4
+        cargo test --verbose
 
     - name: Run grcov
       run: |

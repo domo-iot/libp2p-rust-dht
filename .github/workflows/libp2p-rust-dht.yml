@@ -62,8 +62,6 @@ jobs:
       run: cargo build --verbose --tests --benches
 
     - name: Run tests
-      # https://github.com/domo-iot/libp2p-rust-dht/issues/4
-      if: matrix.platform != 'windows-latest'
       run: cargo test --verbose
 
     - name: Generate docs
