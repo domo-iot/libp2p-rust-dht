@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::io::ErrorKind;
 
 use crate::domocache::{DomoCache, DomoEvent};
 use crate::domopersistentstorage::SqliteStorage;
@@ -8,6 +9,8 @@ use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
 use libp2p::identity;
+use rsa::pkcs8::EncodePrivateKey;
+use rsa::RsaPrivateKey;
 use serde_json::json;
 
 pub struct DomoBroker {
@@ -17,6 +20,7 @@ pub struct DomoBroker {
 
 pub struct DomoBrokerConf {
     pub sqlite_file: String,
+    pub private_key_file: Option<String>,
     pub is_persistent_cache: bool,
     pub shared_key: String,
     pub http_port: u16,
@@ -32,7 +36,26 @@ impl DomoBroker {
         let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache);
 
         // Create a random local key.
-        let local_key = identity::Keypair::generate_ed25519();
+        let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
+            match std::fs::read(&pk_path) {
+                Ok(pem) => {
+                    let der = pem_rfc7468::decode_vec(&pem)
+                        .map_err(|e| format!("Couldn't decode pem: {e:?}"))?;
+                    der.1
+                }
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    // Generate a new key and put it into the file at the given path
+                    let (pem, der) = generate_rsa_key();
+                    std::fs::write(pk_path, pem).expect("Couldn't save ");
+                    der
+                }
+                Err(e) => Err(format!("Couldn't load key file: {e:?}"))?,
+            }
+        } else {
+            generate_rsa_key().1
+        };
+        let local_key = identity::Keypair::rsa_from_pkcs8(&mut pkcs8_der)
+            .map_err(|e| format!("Couldn't load key: {e:?}"))?;
 
         let domo_cache = DomoCache::new(
             conf.is_persistent_cache,
@@ -274,6 +297,19 @@ impl DomoBroker {
     }
 }
 
+fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
+    let mut rng = rand::thread_rng();
+    let bits = 2048;
+    let private_key = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
+    let pem = private_key
+        .to_pkcs8_pem(Default::default())
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let der = private_key.to_pkcs8_der().unwrap().as_ref().to_vec();
+    (pem, der)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::domobroker::DomoBroker;
@@ -288,6 +324,7 @@ mod tests {
             shared_key: String::from(
                 "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
             ),
+            private_key_file: None,
             http_port,
             loopback_only: false,
         };

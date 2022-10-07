@@ -16,6 +16,10 @@ struct Opt {
     #[clap(parse(try_from_str))]
     sqlite_file: String,
 
+    /// Path to a private key file
+    #[clap(parse(try_from_str))]
+    private_key_file: String,
+
     /// Use a persistent cache
     #[clap(parse(try_from_str))]
     is_persistent_cache: bool,
@@ -43,6 +47,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let Opt {
         sqlite_file,
+        private_key_file,
         is_persistent_cache,
         shared_key,
         http_port,
@@ -56,6 +61,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let domo_broker_conf = DomoBrokerConf {
         sqlite_file,
+        private_key_file: Some(private_key_file),
         is_persistent_cache,
         shared_key,
         http_port,

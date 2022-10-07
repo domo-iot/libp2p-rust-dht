@@ -24,6 +24,9 @@ futures-util = "0.3.21"
 url = "2.2.2"
 jsonpath_lib = "0.3.0"
 openssl = { version = '0.10', features = ["vendored"] }
+rsa = "0.6"
+pem-rfc7468 = "0.3"
+rand = "0.8"
 libsqlite3-sys = { version = "*", features = ["bundled"] }
 tower-http = { version = "0.3.0", features = ["cors"] }
 

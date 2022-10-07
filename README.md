@@ -20,11 +20,13 @@ You can find the sifis-dht executable in the <em>target/release</em> folder.
 
 ## Usage
 
-<em>sifis-dht <SQLITE_FILE> <IS_PERSISTENT_CACHE> <SHARED_KEY> <HTTP_PORT> <LOOPBACK_ONLY></em>
+<em>sifis-dht <SQLITE_FILE> <PRIVATE_KEY_FILE> <IS_PERSISTENT_CACHE> <SHARED_KEY> <HTTP_PORT> <LOOPBACK_ONLY></em>
 
 where
 
 <em>SQLITE_FILE</em>: absolute path of the sqlite file where persistent messages published on the DHT are stored.
+
+<em>PRIVATE_KEY_FILE</em>: path to the file containing the node's private key in PEM format.
 
 <em>IS_PERSISTENT_CACHE</em>: if set to true indicates that sifis-dht is authorized to write messages to the provided sqlite file. If set to false, the <em>SQLITE_FILE</em> content will only be used to initialize the cache.
 
