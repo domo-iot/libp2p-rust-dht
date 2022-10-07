@@ -2,7 +2,7 @@
 
 [![Actions Status][actions badge]][actions]
 [![CodeCov][codecov badge]][codecov]
-<!--[![LICENSE][license badge]][license]-->
+[![LICENSE][license badge]][license]
 
 The SIFIS-HOME DHT is a component that offers a completely distributed publish/subscribe mechanism through which SIFIS-HOME applications can exchange messages.
 
@@ -41,7 +41,7 @@ where
 <!-- Links -->
 [actions]: https://github.com/sifis-home/libp2p-rust-dht/actions
 [codecov]: https://codecov.io/gh/sifis-home/libp2p-rust-dht
-<!--[license]: LICENSE-->
+[license]: LICENSE
 
 <!-- Badges -->
 [actions badge]: https://github.com/sifis-home/libp2p-rust-dht/workflows/libp2p-rust-dht/badge.svg
