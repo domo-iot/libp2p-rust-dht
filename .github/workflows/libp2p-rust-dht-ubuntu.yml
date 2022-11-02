@@ -1,4 +1,4 @@
-name: libp2p-rust-dht-ubuntu
+name: libp2p-rust-dht
 
 on:
   push:
