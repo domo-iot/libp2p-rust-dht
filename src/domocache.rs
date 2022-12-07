@@ -5,6 +5,7 @@ use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::identity::Keypair;
 use libp2p::mdns;
 use libp2p::swarm::SwarmEvent;
+use node_manager::{self, NodeManager};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
@@ -16,6 +17,24 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
+
+fn parse_hex_arr<const N: usize>(s: &str) -> Result<[u8; N], String> {
+    if s.len() == N * 2 {
+        let mut r = [0u8; N];
+        for i in 0..N {
+            let ret = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16);
+            match ret {
+                Ok(res) => {
+                    r[i] = res;
+                }
+                Err(_e) => return Err(String::from("Error while parsing")),
+            }
+        }
+        Ok(r)
+    } else {
+        Err(String::from("Len Error"))
+    }
+}
 
 // possible events returned by cache_loop_event()
 #[derive(Debug)]
@@ -69,9 +88,12 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub publish_cache_counter: u8,
     pub last_cache_repub_timestamp: u128,
+    pub loopback_only: bool,
+    pub local_key_pair: Keypair,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub is_persistent_cache: bool,
     pub local_peer_id: String,
+    pub node_manager: NodeManager,
     client_tx_channel: Sender<DomoEvent>,
     client_rx_channel: Receiver<DomoEvent>,
     send_cache_state_timer: tokio::time::Instant,
@@ -283,6 +305,33 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         self.check_caches_desynchronization().await;
     }
 
+    async fn handle_node_manager_response(&mut self, resp: &node_manager::Response) {
+        use node_manager::Response::*;
+        log::info!("Handling command from node manager...");
+        match resp {
+            SetSharedKey(key) => {
+                self.rekey(key.as_slice().try_into().unwrap()).await;
+            }
+            Message(msg, in_members_network) => {
+                let msg_bytes = msg.serialize();
+                if let Err(e) = if *in_members_network {
+                    self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(Topic::new("domo-node-manager"), msg_bytes)
+                } else {
+                    // TODO use lobby_swarm
+                    self.swarm
+                        .behaviour_mut()
+                        .gossipsub
+                        .publish(Topic::new("domo-node-manager"), msg_bytes)
+                } {
+                    log::info!("NodeManager message sending error: {:?}", e);
+                }
+            }
+        }
+    }
+
     async fn check_caches_desynchronization(&mut self) {
         let local_hash = self.get_cache_hash();
         let (sync, leader) = self.is_synchronized(local_hash, &self.peers_caches_state);
@@ -398,6 +447,13 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         "domo-volatile-data" => {
                             return self.handle_volatile_data(&String::from_utf8_lossy(&message.data));
                         }
+                        "domo-node-manager" => {
+                            let responses = self.node_manager.handle_msg(&message.data, false)?;
+                            for response in responses.iter() {
+                                self.handle_node_manager_response(response).await;
+                            }
+                            return Ok(DomoEvent::None);
+                        }
                         _ => {
                             log::info!("Not able to recognize message");
                         }
@@ -435,10 +491,20 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         is_persistent_cache: bool,
         storage: T,
         shared_key: String,
-        local_key_pair: Keypair,
+        key_pair_pkcs8_der: &[u8],
         loopback_only: bool,
-    ) -> Self {
-        let swarm = crate::domolibp2p::start(shared_key, local_key_pair, loopback_only)
+    ) -> Result<Self, String> {
+        let mut kp_pkcs8_der = key_pair_pkcs8_der.to_vec();
+        let local_key_pair = Keypair::rsa_from_pkcs8(&mut kp_pkcs8_der)
+            .map_err(|e| format!("Couldn't load key: {e:?}"))?;
+
+        let arr = parse_hex_arr(&shared_key);
+        let shared_key = match arr {
+            Ok(s) => s,
+            Err(_e) => return Err("Invalid key".into()),
+        };
+
+        let swarm = crate::domolibp2p::start(shared_key, local_key_pair.clone(), loopback_only)
             .await
             .unwrap();
 
@@ -449,10 +515,17 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         let send_cache_state_timer: tokio::time::Instant =
             tokio::time::Instant::now() + Duration::from_secs(u64::from(SEND_CACHE_HASH_PERIOD));
 
+        fn gen_fn(data: &[u8]) -> Result<Vec<u8>, ()> {
+            Ok(data.to_vec())
+        }
+
         let mut c = DomoCache {
             is_persistent_cache,
+            local_key_pair,
+            loopback_only,
             swarm,
             local_peer_id: peer_id,
+            node_manager: NodeManager::new(key_pair_pkcs8_der, gen_fn),
             publish_cache_counter: 4,
             last_cache_repub_timestamp: 0,
             storage,
@@ -472,7 +545,23 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             c.insert_cache_element(elem, false, false).await;
         }
 
-        c
+        Ok(c)
+    }
+
+    pub async fn rekey(&mut self, shared_key: [u8; crate::domolibp2p::KEY_SIZE]) {
+        let swarm =
+            crate::domolibp2p::start(shared_key, self.local_key_pair.clone(), self.loopback_only)
+                .await
+                .unwrap();
+
+        let peer_id = swarm.local_peer_id().to_string();
+
+        assert_eq!(
+            peer_id, self.local_peer_id,
+            "Peer IDs need to match before and after rekeying"
+        );
+
+        self.swarm = swarm;
     }
 
     pub async fn pub_value(&mut self, value: Value) {
@@ -671,14 +760,30 @@ mod tests {
     use crate::domopersistentstorage::SqliteStorage;
 
     async fn make_cache() -> super::DomoCache<SqliteStorage> {
+        use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
+
         let storage = SqliteStorage::new_in_memory();
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
 
-        let local_key = super::Keypair::generate_ed25519();
+        /*
+        use rsa::rand_core::OsRng;
+        let local_key = rsa::RsaPrivateKey::new(&mut OsRng, 2048).unwrap();
+        let local_key_pem = local_key.to_pkcs8_pem(Default::default()).unwrap();
 
-        super::DomoCache::new(true, storage, shared_key, local_key, false).await
+        let local_key_pem :&str = local_key_pem.as_ref();
+        println!("{}", local_key_pem);
+        panic!()
+        */
+
+        let local_key =
+            rsa::RsaPrivateKey::from_pkcs8_pem(include_str!("../tests/test_key1.pem")).unwrap();
+        let local_key_der = local_key.to_pkcs8_der().unwrap();
+
+        super::DomoCache::new(true, storage, shared_key, local_key_der.as_ref(), false)
+            .await
+            .unwrap()
     }
 
     #[tokio::test]

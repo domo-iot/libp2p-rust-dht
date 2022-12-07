@@ -17,6 +17,7 @@ futures-util = "0.3.21"
 jsonpath_lib = "0.3.0"
 libp2p = { version = "0.50.0", features = ["tokio", "mdns", "gossipsub", "noise", "yamux", "pnet", "rsa", "tcp", "macros"] }
 log = "0.4.17"
+node-manager = { path = "../node-manager" } # git = "https://github.com/sifis-home/node-manager" }
 pem-rfc7468 = "0.3"
 rand = "0.8"
 reqwest = { version = "0.11.10", features = ["json"] }

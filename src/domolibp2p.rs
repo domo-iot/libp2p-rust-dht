@@ -26,25 +26,7 @@ use libp2p::swarm::SwarmBuilder;
 use std::error::Error;
 use std::time::Duration;
 
-const KEY_SIZE: usize = 32;
-
-fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], String> {
-    if s.len() == KEY_SIZE * 2 {
-        let mut r = [0u8; KEY_SIZE];
-        for i in 0..KEY_SIZE {
-            let ret = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16);
-            match ret {
-                Ok(res) => {
-                    r[i] = res;
-                }
-                Err(_e) => return Err(String::from("Error while parsing")),
-            }
-        }
-        Ok(r)
-    } else {
-        Err(String::from("Len Error"))
-    }
-}
+pub(crate) const KEY_SIZE: usize = 32;
 
 pub fn build_transport(
     key_pair: identity::Keypair,
@@ -72,22 +54,19 @@ pub fn build_transport(
 }
 
 pub async fn start(
-    shared_key: String,
+    shared_key: [u8; KEY_SIZE],
     local_key_pair: identity::Keypair,
     loopback_only: bool,
 ) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
     let local_peer_id = PeerId::from(local_key_pair.public());
 
     // Create a Gossipsub topic
+    let topic_node_manager = Topic::new("domo-node-manager");
     let topic_persistent_data = Topic::new("domo-persistent-data");
     let topic_volatile_data = Topic::new("domo-volatile-data");
     let topic_config = Topic::new("domo-config");
 
-    let arr = parse_hex_key(&shared_key);
-    let psk = match arr {
-        Ok(s) => Some(PreSharedKey::new(s)),
-        Err(_e) => panic!("Invalid key"),
-    };
+    let psk = Some(PreSharedKey::new(shared_key));
 
     let transport = build_transport(local_key_pair.clone(), psk);
 
@@ -124,6 +103,9 @@ pub async fn start(
             gossipsub_config,
         )
         .expect("Correct configuration");
+
+        // subscribes to node manager topic
+        gossipsub.subscribe(&topic_node_manager).unwrap();
 
         // subscribes to persistent data topic
         gossipsub.subscribe(&topic_persistent_data).unwrap();

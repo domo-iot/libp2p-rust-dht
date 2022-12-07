@@ -8,7 +8,6 @@ use crate::webapimanager::WebApiManager;
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
-use libp2p::identity;
 use rsa::pkcs8::EncodePrivateKey;
 use rsa::RsaPrivateKey;
 use serde_json::json;
@@ -36,7 +35,7 @@ impl DomoBroker {
         let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache);
 
         // Create a random local key.
-        let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
+        let pkcs8_der = if let Some(pk_path) = conf.private_key_file {
             match std::fs::read(&pk_path) {
                 Ok(pem) => {
                     let der = pem_rfc7468::decode_vec(&pem)
@@ -54,17 +53,15 @@ impl DomoBroker {
         } else {
             generate_rsa_key().1
         };
-        let local_key = identity::Keypair::rsa_from_pkcs8(&mut pkcs8_der)
-            .map_err(|e| format!("Couldn't load key: {e:?}"))?;
 
         let domo_cache = DomoCache::new(
             conf.is_persistent_cache,
             storage,
             conf.shared_key,
-            local_key,
+            &pkcs8_der,
             conf.loopback_only,
         )
-        .await;
+        .await?;
 
         let web_manager = WebApiManager::new(conf.http_port);
 
