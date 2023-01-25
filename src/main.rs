@@ -1,8 +1,7 @@
 use serde_json::json;
+use time::OffsetDateTime;
 
 use std::error::Error;
-
-use chrono::prelude::*;
 
 use tokio::io::{self, AsyncBufReadExt};
 
@@ -41,7 +40,7 @@ struct Opt {
 async fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::parse();
 
-    let local = Utc::now();
+    let local = OffsetDateTime::now_utc();
 
     log::info!("Program started at {:?}", local);
 
