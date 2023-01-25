@@ -4,6 +4,7 @@ use chrono::prelude::*;
 use futures::prelude::*;
 use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::identity::Keypair;
+use libp2p::mdns;
 use libp2p::swarm::SwarmEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -402,7 +403,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         }
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
-                        libp2p::mdns::MdnsEvent::Expired(list),
+                        mdns::Event::Expired(list),
                     )) => {
                         let local = Utc::now();
 
@@ -411,7 +412,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         }
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
-                        libp2p::mdns::MdnsEvent::Discovered(list),
+                        mdns::Event::Discovered(list),
                     )) => {
                         let local = Utc::now();
                         for (peer, _) in list {

@@ -1,10 +1,10 @@
 // Gossip includes
-use libp2p::gossipsub;
 use libp2p::gossipsub::MessageId;
 use libp2p::gossipsub::{
     Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity,
     ValidationMode,
 };
+use libp2p::{gossipsub, tcp};
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -16,16 +16,11 @@ use libp2p::core::{
 
 use libp2p::noise;
 use libp2p::pnet::{PnetConfig, PreSharedKey};
-use libp2p::tcp::TokioTcpConfig;
 use libp2p::yamux::YamuxConfig;
 //use libp2p::tcp::TcpConfig;
 use libp2p::Transport;
 
-use libp2p::{
-    identity,
-    mdns::{Mdns, MdnsConfig, MdnsEvent},
-    NetworkBehaviour, PeerId, Swarm,
-};
+use libp2p::{identity, mdns, swarm::NetworkBehaviour, PeerId, Swarm};
 
 use libp2p::swarm::SwarmBuilder;
 use std::error::Error;
@@ -61,7 +56,7 @@ pub fn build_transport(
     let noise_config = noise::NoiseConfig::xx(noise_keys).into_authenticated();
     let yamux_config = YamuxConfig::default();
 
-    let base_transport = TokioTcpConfig::new().nodelay(true);
+    let base_transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
     let maybe_encrypted = match psk {
         Some(psk) => EitherTransport::Left(
             base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket)),
@@ -98,13 +93,13 @@ pub async fn start(
 
     // Create a swarm to manage peers and events.
     let mut swarm = {
-        let mdnsconf = MdnsConfig {
+        let mdnsconf = mdns::Config {
             ttl: Duration::from_secs(600),
             query_interval: Duration::from_secs(580),
             enable_ipv6: false,
         };
 
-        let mdns = Mdns::new(mdnsconf).await?;
+        let mdns = mdns::tokio::Behaviour::new(mdnsconf)?;
 
         // To content-address message, we can take the hash of message and use it as an ID.
         let message_id_fn = |message: &GossipsubMessage| {
@@ -142,13 +137,7 @@ pub async fn start(
         let behaviour = DomoBehaviour { mdns, gossipsub };
         //Swarm::new(transport, behaviour, local_peer_id)
 
-        SwarmBuilder::new(transport, behaviour, local_peer_id)
-            // We want the connection background tasks to be spawned
-            // onto the tokio runtime.
-            .executor(Box::new(|fut| {
-                tokio::spawn(fut);
-            }))
-            .build()
+        SwarmBuilder::with_tokio_executor(transport, behaviour, local_peer_id).build()
     };
 
     if !loopback_only {
@@ -165,20 +154,19 @@ pub async fn start(
 // We create a custom network behaviour that combines mDNS and gossipsub.
 #[derive(NetworkBehaviour)]
 #[behaviour(out_event = "OutEvent")]
-
 pub struct DomoBehaviour {
-    pub mdns: Mdns,
+    pub mdns: libp2p::mdns::tokio::Behaviour,
     pub gossipsub: Gossipsub,
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
     Gossipsub(GossipsubEvent),
-    Mdns(MdnsEvent),
+    Mdns(mdns::Event),
 }
 
-impl From<MdnsEvent> for OutEvent {
-    fn from(v: MdnsEvent) -> Self {
+impl From<mdns::Event> for OutEvent {
+    fn from(v: mdns::Event) -> Self {
         Self::Mdns(v)
     }
 }
