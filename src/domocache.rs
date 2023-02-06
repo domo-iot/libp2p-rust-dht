@@ -668,15 +668,22 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
 #[cfg(test)]
 mod tests {
-    #[tokio::test]
-    async fn test_delete() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
+    use crate::domopersistentstorage::SqliteStorage;
+
+    async fn make_cache() -> super::DomoCache<SqliteStorage> {
+        let storage = SqliteStorage::new_in_memory();
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
+
         let local_key = super::Keypair::generate_ed25519();
-        let mut domo_cache =
-            super::DomoCache::new(true, storage, shared_key, local_key, false).await;
+
+        super::DomoCache::new(true, storage, shared_key, local_key, false).await
+    }
+
+    #[tokio::test]
+    async fn test_delete() {
+        let mut domo_cache = make_cache().await;
 
         domo_cache
             .write_value(
@@ -699,12 +706,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_and_read_key() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
-        let shared_key =
-            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let local_key = super::Keypair::generate_ed25519();
-        let mut domo_cache =
-            super::DomoCache::new(true, storage, shared_key, local_key, false).await;
+        let mut domo_cache = make_cache().await;
 
         domo_cache
             .write_value(
@@ -723,12 +725,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_twice_same_key() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
-        let shared_key =
-            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let local_key = super::Keypair::generate_ed25519();
-        let mut domo_cache =
-            super::DomoCache::new(true, storage, shared_key, local_key, false).await;
+        let mut domo_cache = make_cache().await;
 
         domo_cache
             .write_value(
@@ -763,12 +760,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_write_old_timestamp() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
-        let shared_key =
-            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let local_key = super::Keypair::generate_ed25519();
-        let mut domo_cache =
-            super::DomoCache::new(true, storage, shared_key, local_key, false).await;
+        let mut domo_cache = make_cache().await;
 
         domo_cache
             .write_value(
@@ -816,13 +808,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_filter_topic_name() {
-        let storage = crate::domopersistentstorage::SqliteStorage::new_in_memory();
-
-        let shared_key =
-            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-        let local_key = super::Keypair::generate_ed25519();
-        let mut domo_cache =
-            super::DomoCache::new(true, storage, shared_key, local_key, false).await;
+        let mut domo_cache = make_cache().await;
 
         domo_cache
             .write_value(
