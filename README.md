@@ -44,7 +44,7 @@ file <em> private_key_file </em>.
 <!-- Links -->
 [actions]: https://github.com/sifis-home/libp2p-rust-dht/actions
 [codecov]: https://codecov.io/gh/sifis-home/libp2p-rust-dht
-[license]: LICENSE
+[license]: LICENSES/MIT.txt
 
 <!-- Badges -->
 [actions badge]: https://github.com/sifis-home/libp2p-rust-dht/workflows/libp2p-rust-dht/badge.svg

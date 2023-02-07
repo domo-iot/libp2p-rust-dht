@@ -9,6 +9,16 @@ on:
       - master
 
 jobs:
+  reuse:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: REUSE Compliance Check
+      uses: fsfe/reuse-action@v1
+
   clippy-rustfmt:
 
     runs-on: ubuntu-latest
@@ -16,52 +26,44 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install stable
-      uses: actions-rs/toolchain@v1
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
       with:
-        profile: minimal
         toolchain: stable
-        override: true
         components: clippy, rustfmt
 
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install protobuf-compiler
-
     - name: Run rustfmt
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        args: -- --check --verbose
+      run:
+        cargo fmt --all -- --check --verbose
 
     - name: Run cargo clippy
-      uses: actions-rs/clippy-check@v1
+      uses: giraffate/clippy-action@v1
       with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-        args: --all-targets --tests --benches -- -D warnings
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        clippy_flags: --all-targets -- -D warnings
+        reporter: github-pr-review
 
   build-test:
+
+    needs: [reuse, clippy-rustfmt]
 
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install Rust stable
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
-
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
 
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
     - name: Build
-      run: cargo build --verbose --tests --benches
+      run: cargo build --verbose --all-targets
 
     - name: Run tests
       run: cargo test --verbose
@@ -71,22 +73,22 @@ jobs:
 
   code-coverage:
 
+    needs: build-test
+
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install Rust stable
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
-
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
 
     - name: Install grcov
       env:
@@ -157,6 +159,8 @@ jobs:
 
   static-code-analysis:
 
+    needs: build-test
+
     runs-on: ubuntu-latest
 
     steps:
@@ -186,22 +190,22 @@ jobs:
 
   weighted-code-coverage:
 
+    needs: build-test
+
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install stable
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
-
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
 
     - name: Install grcov
       env:
@@ -214,7 +218,7 @@ jobs:
 
     - name: Install weighted-code-coverage
       env:
-        WCC_LINK: https://github.com/giovannitangredi/weighted-code-coverage/releases/download
+        WCC_LINK: https://github.com/SoftengPoliTo/weighted-code-coverage/releases/download
         WCC_VERSION: v0.1.0
         WCC_BINARY: weighted-code-coverage-0.1.0-x86_64-unknown-linux-gnu.tar.gz
       run: |
@@ -254,28 +258,27 @@ jobs:
 
   dependency-check:
 
+    needs: build-test
+
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install stable
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
-
-    - name: Install nightly
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: nightly
-
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
 
     - name: Install cargo-udeps
       env:
@@ -313,4 +316,125 @@ jobs:
 
     - name: Run cargo-audit
       run: |
-        cargo audit --ignore RUSTSEC-2020-0071 --ignore RUSTSEC-2022-0040
+        cargo audit
+
+  fuzzy:
+
+    needs: [code-coverage, static-code-analysis, weighted-code-coverage, dependency-check]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+
+    - name: Cache produced data
+      id: cache-data
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
+
+    # FIXME Use binaries
+    - name: Install cargo-fuzz
+      if: steps.cache-data.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-fuzz
+
+    # FIXME Create a template with a dummy series of fuzzy tests
+    - name: Init cargo-fuzz
+      run: cargo fuzz init
+
+    - name: Run cargo-fuzz
+      run: cargo fuzz build
+
+  unsafe-checks:
+
+    needs: fuzzy
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Install cargo-geiger
+      run: |
+        cargo install cargo-geiger
+
+    - name: Run cargo-geiger
+      id: geiger
+      run: |
+        # If there is unsafe code, cargo geiger exit code is 1, otherwise 0
+        [ -z $(cargo geiger || echo $?) ] && EXIT_CODE=0 || EXIT_CODE=1
+        echo "result=$EXIT_CODE" >> $GITHUB_OUTPUT
+
+    - name: Install valgrind
+      if: steps.geiger.outputs.result != '0'
+      run: |
+        sudo apt-get install valgrind
+
+    # FIXME Use binaries
+    - name: Install cargo-valgrind
+      if: steps.geiger.outputs.result != '0'
+      run: |
+        cargo install cargo-valgrind
+
+    # Usage of the `help` command as base command, please replace it
+    # with the effective command that valgrind has to analyze
+    - name: Run cargo-valgrind
+      if: steps.geiger.outputs.result != '0'
+      run: |
+        cargo valgrind run -- --help
+
+    - name: Install Rust nightly and miri
+      if: steps.geiger.outputs.result != '0'
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+        components: miri, rust-src
+
+    - name: Run miri
+      if: steps.geiger.outputs.result != '0'
+      env:
+        # -Zrandomize-layout makes sure not to rely on the layout of anything
+        # that might change
+        RUSTFLAGS: -Zrandomize-layout
+        # -Zmiri-symbolic-alignment-check makes the alignment check more strict.
+        MIRIFLAGS: >
+          -Zmiri-symbolic-alignment-check
+      run: cargo miri test
+
+    - name: Run AddressSanitizer
+      if: steps.geiger.outputs.result != '0'
+      env:
+        RUSTFLAGS: -Zsanitizer=address -Copt-level=3
+        RUSTDOCFLAGS: -Zsanitizer=address
+      run: cargo test -Zbuild-std --target x86_64-unknown-linux-gnu
+      # Use `cargo run` for the analysis of a binary.
+      # Usage of the `help` command as base command, please replace it
+      # with the effective command that AddressSanitizer has to analyze
+      # run: cargo run -Zbuild-std --target x86_64-unknown-linux-gnu -- --help
