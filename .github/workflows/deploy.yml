@@ -14,44 +14,43 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install protobuf-compiler
-
     - name: Install Rust stable
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
         target: x86_64-unknown-linux-musl
 
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
     - name: Install musl
-      if: contains(matrix.target, 'linux-musl')
       run: |
         sudo apt-get install musl-tools
 
-    - name: Build libp2p-rust-dht
+    - name: Build sifis-dht
       run: |
         # TODO: Remember to add RUSTFLAGS=+crt-static for musl target when
         # static linkage will not be the default behaviour
-        cargo build --release --target x86_64-unknown-linux-musl
+        cargo build --release --all-features --target x86_64-unknown-linux-musl
 
     - name: Strip binary
       run: |
-        strip target/x86_64-unknown-linux-musl/release/libp2p-rust-dht
+        strip target/x86_64-unknown-linux-musl/release/sifis-dht
 
     - name: Get the version
       id: tagName
       run: |
-        VERSION=$(cargo pkgid | cut -d# -f2 | cut -d: -f2)
+        VERSION=$(cargo pkgid | cut -d@ -f2)
         echo "tag=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Build package
       id: package
       run: |
-        TAR_FILE=libp2p-rust-dht-${{ steps.tagName.outputs.tag }}-x86_64-unknown-linux-musl
+        TAR_FILE=sifis-dht-${{ steps.tagName.outputs.tag }}-x86_64-unknown-linux-musl
         cd target/x86_64-unknown-linux-musl/release
-        tar -czvf $GITHUB_WORKSPACE/$TAR_FILE.tar.gz libp2p-rust-dht
+        tar -czvf $GITHUB_WORKSPACE/$TAR_FILE.tar.gz sifis-dht
         echo "name=$TAR_FILE" >> $GITHUB_OUTPUT
         echo "file=$TAR_FILE.tar.gz" >> $GITHUB_OUTPUT
 
@@ -83,7 +82,7 @@ jobs:
       - name: Get version
         id: tagName
         run: |
-          VERSION=$(cargo pkgid | cut -d# -f2 | cut -d: -f2)
+          VERSION=$(cargo pkgid | cut -d@ -f2)
           echo "tag=$VERSION" >> $GITHUB_OUTPUT
 
       - name: Download artifacts
