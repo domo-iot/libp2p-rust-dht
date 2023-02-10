@@ -408,7 +408,7 @@ jobs:
     - name: Run cargo-valgrind
       if: steps.geiger.outputs.result != '0'
       run: |
-        cargo valgrind run -- --help
+        cargo valgrind test
 
     - name: Run AddressSanitizer
       if: steps.geiger.outputs.result != '0'
