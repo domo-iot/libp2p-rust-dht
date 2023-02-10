@@ -327,53 +327,39 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
 
-    - name: Install Rust stable
-      uses: dtolnay/rust-toolchain@stable
+    - name: Cache produced data
+      id: cache-data
+      uses: actions/cache@v3
       with:
-        toolchain: stable
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: {{ '${{ runner.os }}' }}-cargo-ci-{{ "${{ hashFiles('**/Cargo.toml') }}" }}
 
-    - name: Install cargo-geiger
+    - name: Install cargo-careful
+      if: steps.cache-data.outputs.cache-hit != 'true'
       run: |
-        cargo install cargo-geiger
+        cargo install cargo-careful
 
-    - name: Run cargo-geiger
-      id: geiger
+    - name: Run cargo-careful
       run: |
-        # If there is unsafe code, cargo geiger exit code is 1, otherwise 0
-        [ -z $(cargo geiger || echo $?) ] && EXIT_CODE=0 || EXIT_CODE=1
-        echo "result=$EXIT_CODE" >> $GITHUB_OUTPUT
-
-    - name: Install valgrind
-      if: steps.geiger.outputs.result != '0'
-      run: |
-        sudo apt-get install valgrind
-
-    # FIXME Use binaries
-    - name: Install cargo-valgrind
-      if: steps.geiger.outputs.result != '0'
-      run: |
-        cargo install cargo-valgrind
-
-    # Usage of the `help` command as base command, please replace it
-    # with the effective command that valgrind has to analyze
-    - name: Run cargo-valgrind
-      if: steps.geiger.outputs.result != '0'
-      run: |
-        cargo valgrind test
-
-    - name: Install Rust nightly
-      if: steps.geiger.outputs.result != '0'
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        toolchain: nightly
+        cargo +nightly careful test
+        # cargo +nightly careful run
 
     - name: Run AddressSanitizer
-      if: steps.geiger.outputs.result != '0'
       env:
         RUSTFLAGS: -Zsanitizer=address -Copt-level=3
         RUSTDOCFLAGS: -Zsanitizer=address
