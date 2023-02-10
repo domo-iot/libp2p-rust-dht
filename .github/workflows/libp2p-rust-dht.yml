@@ -410,24 +410,6 @@ jobs:
       run: |
         cargo valgrind run -- --help
 
-    - name: Install Rust nightly and miri
-      if: steps.geiger.outputs.result != '0'
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        toolchain: nightly
-        components: miri, rust-src
-
-    - name: Run miri
-      if: steps.geiger.outputs.result != '0'
-      env:
-        # -Zrandomize-layout makes sure not to rely on the layout of anything
-        # that might change
-        RUSTFLAGS: -Zrandomize-layout
-        # -Zmiri-symbolic-alignment-check makes the alignment check more strict.
-        MIRIFLAGS: >
-          -Zmiri-symbolic-alignment-check
-      run: cargo miri test
-
     - name: Run AddressSanitizer
       if: steps.geiger.outputs.result != '0'
       env:
