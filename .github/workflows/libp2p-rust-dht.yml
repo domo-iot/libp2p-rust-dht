@@ -331,6 +331,7 @@ jobs:
       uses: dtolnay/rust-toolchain@nightly
       with:
         toolchain: nightly
+        components: rust-src
 
     - name: Install protobuf compiler
       run: |
