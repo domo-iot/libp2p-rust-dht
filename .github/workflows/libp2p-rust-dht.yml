@@ -318,9 +318,47 @@ jobs:
       run: |
         cargo audit
 
-  unsafe-checks:
+  cache-level:
 
     needs: [code-coverage, static-code-analysis, weighted-code-coverage, dependency-check]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+        components: rust-src
+
+    - name: Cache produced data
+      id: cache-data
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
+
+    # FIXME Use binaries
+    - name: Install cargo-fuzz
+      if: steps.cache-data.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-fuzz
+
+    - name: Install cargo-careful
+      if: steps.cache-data.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-careful
+
+  unsafe-checks:
+
+    needs: cache-level
 
     runs-on: ubuntu-latest
 
@@ -349,11 +387,6 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
-
-    - name: Install cargo-careful
-      if: steps.cache-data.outputs.cache-hit != 'true'
-      run: |
-        cargo install cargo-careful
 
     - name: Run cargo-careful
       run: |
@@ -400,12 +433,6 @@ jobs:
           ~/.cargo/git/db/
           target/
         key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
-
-    # FIXME Use binaries
-    - name: Install cargo-fuzz
-      if: steps.cache-data.outputs.cache-hit != 'true'
-      run: |
-        cargo install cargo-fuzz
 
     # FIXME Create a template with a dummy series of fuzzy tests
     - name: Init cargo-fuzz
