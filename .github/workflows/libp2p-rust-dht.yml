@@ -410,6 +410,12 @@ jobs:
       run: |
         cargo valgrind test
 
+    - name: Install Rust nightly
+      if: steps.geiger.outputs.result != '0'
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+
     - name: Run AddressSanitizer
       if: steps.geiger.outputs.result != '0'
       env:
