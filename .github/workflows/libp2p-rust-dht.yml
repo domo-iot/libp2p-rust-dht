@@ -318,53 +318,9 @@ jobs:
       run: |
         cargo audit
 
-  fuzzy:
-
-    needs: [code-coverage, static-code-analysis, weighted-code-coverage, dependency-check]
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Install protobuf compiler
-      run: |
-        sudo apt-get update
-        sudo apt-get install protobuf-compiler
-
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        toolchain: nightly
-
-    - name: Cache produced data
-      id: cache-data
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
-
-    # FIXME Use binaries
-    - name: Install cargo-fuzz
-      if: steps.cache-data.outputs.cache-hit != 'true'
-      run: |
-        cargo install cargo-fuzz
-
-    # FIXME Create a template with a dummy series of fuzzy tests
-    - name: Init cargo-fuzz
-      run: cargo fuzz init
-
-    - name: Run cargo-fuzz
-      run: cargo fuzz build
-
   unsafe-checks:
 
-    needs: fuzzy
+    needs: [code-coverage, static-code-analysis, weighted-code-coverage, dependency-check]
 
     runs-on: ubuntu-latest
 
@@ -426,3 +382,47 @@ jobs:
       # Usage of the `help` command as base command, please replace it
       # with the effective command that AddressSanitizer has to analyze
       # run: cargo run -Zbuild-std --target x86_64-unknown-linux-gnu -- --help
+
+  fuzzy:
+
+    needs: unsafe-checks
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+
+    - name: Cache produced data
+      id: cache-data
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
+
+    # FIXME Use binaries
+    - name: Install cargo-fuzz
+      if: steps.cache-data.outputs.cache-hit != 'true'
+      run: |
+        cargo install cargo-fuzz
+
+    # FIXME Create a template with a dummy series of fuzzy tests
+    - name: Init cargo-fuzz
+      run: cargo fuzz init
+
+    - name: Run cargo-fuzz
+      run: cargo fuzz build
