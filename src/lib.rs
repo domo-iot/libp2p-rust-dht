@@ -6,3 +6,5 @@ pub mod restmessage;
 pub mod utils;
 pub mod webapimanager;
 pub mod websocketmessage;
+
+pub use libp2p::identity::Keypair;
