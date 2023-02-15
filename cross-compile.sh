@@ -1,2 +1,4 @@
 #!/bin/bash
-cross build --release --target armv7-unknown-linux-musleabihf
+cross build --release --target aarch64-unknown-linux-musl --features=vendored
+
+
