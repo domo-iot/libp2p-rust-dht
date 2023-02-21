@@ -7,7 +7,7 @@ on:
 
 jobs:
 
-  create-ubuntu-binary:
+  deploy-musl-binary:
 
     runs-on: ubuntu-latest
 
@@ -42,59 +42,20 @@ jobs:
     - name: Get the version
       id: tagName
       run: |
-        VERSION=$(cargo pkgid | cut -d@ -f2)
+        VERSION=$(cargo pkgid | cut -d# -f2)
         echo "tag=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Build package
-      id: package
       run: |
         TAR_FILE=sifis-dht-${{ steps.tagName.outputs.tag }}-x86_64-unknown-linux-musl
         cd target/x86_64-unknown-linux-musl/release
         tar -czvf $GITHUB_WORKSPACE/$TAR_FILE.tar.gz sifis-dht
-        echo "name=$TAR_FILE" >> $GITHUB_OUTPUT
-        echo "file=$TAR_FILE.tar.gz" >> $GITHUB_OUTPUT
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v2
+    - name: Create a release
+      uses: softprops/action-gh-release@v1
       with:
-        name: ${{ steps.package.outputs.name }}
-        path: ${{ steps.package.outputs.file }}
-
-
-  deploy:
-
-    needs: create-ubuntu-binary
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Create Cargo.lock
-        run: |
-          cargo update
-
-      - name: Get version
-        id: tagName
-        run: |
-          VERSION=$(cargo pkgid | cut -d@ -f2)
-          echo "tag=$VERSION" >> $GITHUB_OUTPUT
-
-      - name: Download artifacts
-        uses: actions/download-artifact@v2
-        with:
-          path: ./binaries
-
-      - name: Create a release
-        uses: softprops/action-gh-release@v1
-        with:
-          name: v${{ steps.tagName.outputs.tag }}
-          files: |
-            ./binaries/**/*.tar.gz
+        name: v${{ steps.tagName.outputs.tag }}
+        files: |
+          sifis-dht-${{ steps.tagName.outputs.tag }}-x86_64-unknown-linux-musl.tar.gz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

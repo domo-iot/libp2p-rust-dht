@@ -4,17 +4,35 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'fuzz/**'
+      - '.github/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
   pull_request:
     branches:
       - master
+    paths:
+      - 'src/**'
+      - 'crates/**'
+      - 'fuzz/**'
+      - '.github/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
 
 jobs:
+
+################################## LEGAL AND FORMAT LAYER ######################
+
   reuse:
 
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
+
 
     - name: REUSE Compliance Check
       uses: fsfe/reuse-action@v1
@@ -43,9 +61,40 @@ jobs:
         clippy_flags: --all-targets -- -D warnings
         reporter: github-pr-review
 
-  build-test:
+  static-code-analysis:
 
-    needs: [reuse, clippy-rustfmt]
+    env:
+      RCA_LINK: https://github.com/mozilla/rust-code-analysis/releases/download
+      RCA_VERSION: v0.0.25
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install rust-code-analysis
+      run: |
+        mkdir -p $HOME/.local/bin
+        curl -L "$RCA_LINK/$RCA_VERSION/rust-code-analysis-linux-cli-x86_64.tar.gz" |
+        tar xz -C $HOME/.local/bin
+        echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+    - name: Run rust-code-analysis
+      run: |
+        mkdir $HOME/rca-json
+        rust-code-analysis-cli --metrics -O json --pr -o "$HOME/rca-json" -p $PWD
+
+    - name: Upload rust-code-analysis json
+      uses: actions/upload-artifact@v3
+      with:
+        name: rca-json
+        path: ~/rca-json
+
+################################## BUILD AND DOCS LAYER ########################
+
+  build:
+
+    needs: [reuse, clippy-rustfmt, static-code-analysis]
 
     runs-on: ubuntu-latest
 
@@ -63,17 +112,35 @@ jobs:
         toolchain: stable
 
     - name: Build
-      run: cargo build --verbose --all-targets
+      run: cargo build --verbose
 
-    - name: Run tests
-      run: cargo test --verbose
+  docs:
+
+    needs: [reuse, clippy-rustfmt, static-code-analysis]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
 
     - name: Generate docs
-      run: cargo doc --no-deps
+      run: cargo doc --verbose --no-deps
+
+################################## CODE COVERAGE LAYER ##################################
 
   code-coverage:
 
-    needs: build-test
+    needs: [build, docs]
 
     runs-on: ubuntu-latest
 
@@ -93,7 +160,7 @@ jobs:
     - name: Install grcov
       env:
         GRCOV_LINK: https://github.com/mozilla/grcov/releases/download
-        GRCOV_VERSION: v0.8.7
+        GRCOV_VERSION: v0.8.13
       run: |
         curl -L "$GRCOV_LINK/$GRCOV_VERSION/grcov-x86_64-unknown-linux-musl.tar.bz2" |
         tar xj -C $HOME/.cargo/bin
@@ -109,14 +176,8 @@ jobs:
 
     - name: Run tests
       env:
-        CARGO_INCREMENTAL: 0
+        RUSTFLAGS: "-Cinstrument-coverage"
         LLVM_PROFILE_FILE: "libp2p-rust-dht-%p-%m.profraw"
-        RUSTFLAGS: >
-          -Cinstrument-coverage -Ccodegen-units=1 -Clink-dead-code
-          -Coverflow-checks=off
-        RUSTDOCFLAGS: >
-          -Cinstrument-coverage -Ccodegen-units=1 -Clink-dead-code
-          -Coverflow-checks=off
       run: |
         cargo test --verbose
 
@@ -132,9 +193,11 @@ jobs:
 
     - name: Get total coverage
       run: |
+        # Remove lcov.info file to avoid function duplications
+        rm -rf lcov.info
         grcov . --binary-path ./target/debug/ -s . -t covdir --branch \
               --token YOUR_COVDIR_TOKEN --ignore-not-existing --ignore "/*" \
-              --ignore "../*"  > covdir.json
+              --ignore "../*" -o covdir.json
 
     - name: Evaluate code coverage value
       shell: bash
@@ -157,40 +220,9 @@ jobs:
             exit 1
         fi
 
-  static-code-analysis:
-
-    needs: build-test
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v3
-
-    - name: Install rust-code-analysis
-      env:
-        RCA_LINK: https://github.com/mozilla/rust-code-analysis/releases/download
-        RCA_VERSION: v0.0.23
-      run: |
-        mkdir -p $HOME/.local/bin
-        curl -L "$RCA_LINK/$RCA_VERSION/rust-code-analysis-linux-cli-x86_64.tar.gz" |
-        tar xz -C $HOME/.local/bin
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-
-    - name: Run rust-code-analysis
-      run: |
-        mkdir $HOME/rca-json
-        # FIXME: Update rca version to analyze the entire directory of a repo
-        rust-code-analysis-cli --metrics -O json --pr -o "$HOME/rca-json" -p src/
-
-    - name: Upload rust-code-analysis json
-      uses: actions/upload-artifact@v3
-      with:
-        name: rca-json-ubuntu
-        path: ~/rca-json
-
   weighted-code-coverage:
 
-    needs: build-test
+    needs: [build, docs]
 
     runs-on: ubuntu-latest
 
@@ -210,7 +242,7 @@ jobs:
     - name: Install grcov
       env:
         GRCOV_LINK: https://github.com/mozilla/grcov/releases/download
-        GRCOV_VERSION: v0.8.7
+        GRCOV_VERSION: v0.8.13
         GRCOV_BINARY: grcov-x86_64-unknown-linux-musl.tar.bz2
       run: |
         curl -L "$GRCOV_LINK/$GRCOV_VERSION/$GRCOV_BINARY" |
@@ -256,39 +288,70 @@ jobs:
         name: weighted-code-coverage-ubuntu
         path: ~/wcc-output/out.json
 
-  dependency-check:
+################################## DEPENDENCY LAYER ###########################
 
-    needs: build-test
+  audit:
+
+    needs: [code-coverage, weighted-code-coverage]
 
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v3
 
+    - name: Check dependencies changes
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          cargo:
+            - 'Cargo.toml'
+            - 'Cargo.lock'
+
     - name: Install protobuf compiler
+      if: steps.changes.outputs.cargo == 'true'
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Run cargo-audit
+      if: steps.changes.outputs.cargo == 'true'
+      uses: actions-rs/audit-check@v1
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  deny:
+
+    needs: [code-coverage, weighted-code-coverage]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Check dependencies changes
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          cargo:
+            - 'Cargo.toml'
+            - 'Cargo.lock'
+
+    - name: Install protobuf compiler
+      if: steps.changes.outputs.cargo == 'true'
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
 
     - name: Install Rust stable
+      if: steps.changes.outputs.cargo == 'true'
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
 
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        toolchain: nightly
-
-    - name: Install cargo-udeps
-      env:
-        UDEPS_LINK: https://github.com/est31/cargo-udeps/releases/download
-        UDEPS_VERSION: v0.1.35
-      run: |
-        curl -L "$UDEPS_LINK/$UDEPS_VERSION/cargo-udeps-$UDEPS_VERSION-x86_64-unknown-linux-gnu.tar.gz" |
-        tar xz -C $HOME/.cargo/bin --strip-components 2
-
     - name: Install cargo-deny
+      if: steps.changes.outputs.cargo == 'true'
       env:
         DENY_LINK: https://github.com/EmbarkStudios/cargo-deny/releases/download
         DENY_VERSION: 0.13.7
@@ -296,31 +359,62 @@ jobs:
         curl -L "$DENY_LINK/$DENY_VERSION/cargo-deny-$DENY_VERSION-x86_64-unknown-linux-musl.tar.gz" |
         tar xz -C $HOME/.cargo/bin --strip-components 1
 
-    - name: Install cargo-audit
-      env:
-        AUDIT_LINK: https://github.com/rustsec/rustsec/releases/download/cargo-audit%2F
-        AUDIT_VERSION: v0.17.4
-      run: |
-        curl -L "$AUDIT_LINK$AUDIT_VERSION/cargo-audit-x86_64-unknown-linux-musl-$AUDIT_VERSION.tgz" |
-        tar xzv -C $HOME/.cargo/bin --strip-components 1
-
-    - name: Run cargo-udeps
-      run: |
-        cargo +nightly udeps --all-targets
-
     - name: Run cargo-deny
+      if: steps.changes.outputs.cargo == 'true'
       run: |
         cargo deny init
         cargo deny check bans
         # cargo deny check licenses
 
-    - name: Run cargo-audit
+  udeps:
+
+    needs: [code-coverage, weighted-code-coverage]
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Check dependencies changes
+      uses: dorny/paths-filter@v2
+      id: changes
+      with:
+        filters: |
+          cargo:
+            - 'Cargo.toml'
+            - 'Cargo.lock'
+
+    - name: Install protobuf compiler
+      if: steps.changes.outputs.cargo == 'true'
       run: |
-        cargo audit
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Install Rust nightly
+      if: steps.changes.outputs.cargo == 'true'
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+
+    - name: Install cargo-udeps
+      if: steps.changes.outputs.cargo == 'true'
+      env:
+        UDEPS_LINK: https://github.com/est31/cargo-udeps/releases/download
+        UDEPS_VERSION: v0.1.35
+      run: |
+        curl -L "$UDEPS_LINK/$UDEPS_VERSION/cargo-udeps-$UDEPS_VERSION-x86_64-unknown-linux-gnu.tar.gz" |
+        tar xz -C $HOME/.cargo/bin --strip-components 2
+
+    - name: Run cargo-udeps
+      if: steps.changes.outputs.cargo == 'true'
+      run: |
+        cargo +nightly udeps --all-targets
+
+################################## CACHE LEVEL #################################
 
   cache-level:
 
-    needs: [code-coverage, static-code-analysis, weighted-code-coverage, dependency-check]
+    needs: [audit, deny, udeps]
 
     runs-on: ubuntu-latest
 
@@ -345,18 +439,14 @@ jobs:
           target/
         key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
 
-    # FIXME Use binaries
-    - name: Install cargo-fuzz
-      if: steps.cache-data.outputs.cache-hit != 'true'
-      run: |
-        cargo install cargo-fuzz
-
     - name: Install cargo-careful
       if: steps.cache-data.outputs.cache-hit != 'true'
       run: |
         cargo install cargo-careful
 
-  unsafe-checks:
+################################## UNSAFE CHECKS LEVEL #########################
+
+  valgrind:
 
     needs: cache-level
 
@@ -365,16 +455,49 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Install Rust nightly
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        toolchain: nightly
-        components: rust-src
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Install valgrind
+      run: |
+        sudo apt-get install valgrind
+
+    - name: Install cargo-valgrind
+      env:
+        VALGRIND_LINK: https://github.com/jfrimmel/cargo-valgrind/releases/download
+        VALGRIND_VERSION: 2.1.0
+      run: |
+        curl -L "$VALGRIND_LINK/v$VALGRIND_VERSION/cargo-valgrind-$VALGRIND_VERSION-x86_64-unknown-linux-musl.tar.gz" |
+        tar xz -C $HOME/.cargo/bin
+
+    # Usage of the `help` command as base command, please replace it
+    # with the effective command that valgrind has to analyze
+    - name: Run cargo-valgrind
+      run: |
+        cargo valgrind run -- --help
+        # cargo valgrind test
+
+  careful:
+
+    needs: cache-level
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
 
     - name: Install protobuf compiler
       run: |
         sudo apt-get update
         sudo apt-get install protobuf-compiler
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+        components: rust-src
 
     - name: Cache produced data
       id: cache-data
@@ -393,6 +516,26 @@ jobs:
         cargo +nightly careful test
         # cargo +nightly careful run
 
+  address-sanitizer:
+
+    needs: cache-level
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install protobuf compiler
+      run: |
+        sudo apt-get update
+        sudo apt-get install protobuf-compiler
+
+    - name: Install Rust nightly
+      uses: dtolnay/rust-toolchain@nightly
+      with:
+        toolchain: nightly
+        components: rust-src
+
     - name: Run AddressSanitizer
       env:
         RUSTFLAGS: -Zsanitizer=address -Copt-level=3
@@ -403,9 +546,11 @@ jobs:
       # with the effective command that AddressSanitizer has to analyze
       # run: cargo run -Zbuild-std --target x86_64-unknown-linux-gnu -- --help
 
+################################## FUZZY LEVEL #################################
+
   fuzzy:
 
-    needs: unsafe-checks
+    needs: [valgrind, careful, address-sanitizer]
 
     runs-on: ubuntu-latest
 
@@ -422,21 +567,13 @@ jobs:
       with:
         toolchain: nightly
 
-    - name: Cache produced data
-      id: cache-data
-      uses: actions/cache@v3
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-ci-${{ hashFiles('**/Cargo.toml') }}
-
-    # FIXME Create a template with a dummy series of fuzzy tests
-    - name: Init cargo-fuzz
-      run: cargo fuzz init
+    - name: Install cargo-fuzz
+      env:
+        FUZZ_LINK: https://github.com/rust-fuzz/cargo-fuzz/releases/download
+        FUZZ_VERSION: 0.11.2
+      run: |
+        curl -L "$FUZZ_LINK/$FUZZ_VERSION/cargo-fuzz-$FUZZ_VERSION-x86_64-unknown-linux-musl.tar.gz" |
+        tar xz -C $HOME/.cargo/bin
 
     - name: Run cargo-fuzz
-      run: cargo fuzz build
+      run: cargo fuzz build --target x86_64-unknown-linux-gnu
