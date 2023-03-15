@@ -1,3 +1,3 @@
 #!/bin/bash
-docker build -t sifis-dht .
-docker run --net=host --name sifis-dht --rm sifis-dht:latest
+docker build -t alpine-dht .
+docker run --net=host --name alpine-dht --rm alpine-dht:latest

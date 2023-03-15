@@ -1,0 +1,27 @@
+name: cross
+
+on:
+  push:
+    branches: [ "cicd" ]
+    tags:
+      - 'v*.*.*'
+
+jobs:
+
+  cross-compile:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Rust stable
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+    - name: Install Cross
+      run: |
+        cargo install cross --git https://github.com/cross-rs/cross
+    - name: Launch cross-compile.sh script
+      run: |
+        ./cross-compile.sh
