@@ -42,7 +42,7 @@ jobs:
     - name: Get the version
       id: tagName
       run: |
-        VERSION=$(cargo pkgid | cut -d# -f2)
+        VERSION=$(cargo pkgid | cut -d@ -f2)
         echo "tag=$VERSION" >> $GITHUB_OUTPUT
 
     - name: Build package
@@ -57,5 +57,5 @@ jobs:
         name: v${{ steps.tagName.outputs.tag }}
         files: |
           sifis-dht-${{ steps.tagName.outputs.tag }}-x86_64-unknown-linux-musl.tar.gz
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
