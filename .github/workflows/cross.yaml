@@ -2,7 +2,7 @@ name: cross
 
 on:
   push:
-    branches: [ "cicd" ]
+    branches: [ "master", "cicd" ]
     tags:
       - 'v*.*.*'
 
