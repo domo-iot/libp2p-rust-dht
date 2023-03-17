@@ -91,6 +91,7 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     pub loopback_only: bool,
     pub local_key_pair: Keypair,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
+    pub lobby_swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub is_persistent_cache: bool,
     pub local_peer_id: String,
     pub node_manager: NodeManager,
@@ -320,8 +321,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         .gossipsub
                         .publish(Topic::new("domo-node-manager"), msg_bytes)
                 } else {
-                    // TODO use lobby_swarm
-                    self.swarm
+                    self.lobby_swarm
                         .behaviour_mut()
                         .gossipsub
                         .publish(Topic::new("domo-node-manager"), msg_bytes)
@@ -483,6 +483,74 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                     _ => {}
                     }
                 }
+
+                event = self.lobby_swarm.select_next_some() => {
+                match event {
+
+                    SwarmEvent::ExpiredListenAddr { address, .. } => {
+                        log::info!("Address {address:?} expired (lobby)");
+                    }
+                    SwarmEvent::ConnectionEstablished {..} => {
+                            log::info!("Connection established (lobby)...");
+                    }
+                    SwarmEvent::ConnectionClosed { .. } => {
+                        log::info!("Connection closed (lobby)");
+                    }
+                    SwarmEvent::ListenerError { .. } => {
+                        log::info!("Listener Error (lobby)");
+                    }
+                    SwarmEvent::OutgoingConnectionError { .. } => {
+                        log::info!("Outgoing connection error (lobby)");
+                    }
+                    SwarmEvent::ListenerClosed { .. } => {
+                        log::info!("Listener Closed (lobby)");
+                    }
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        println!("Listening in {address:?} (lobby)");
+                    }
+                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
+                        libp2p::gossipsub::GossipsubEvent::Message {
+                            propagation_source: _peer_id,
+                            message_id: _id,
+                            message,
+                        },
+                    )) => match message.topic.to_string().as_str() {
+                        "domo-node-manager-lobby" => {
+                            let responses = self.node_manager.handle_msg(&message.data, true)?;
+                            for response in responses.iter() {
+                                self.handle_node_manager_response(response).await;
+                            }
+                            return Ok(DomoEvent::None);
+                        }
+                        _ => {
+                            log::info!("Not able to recognize message (lobby)");
+                        }
+                    }
+                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
+                        mdns::Event::Expired(list),
+                    )) => {
+                        let local = OffsetDateTime::now_utc();
+
+                        for (peer, _) in list {
+                            log::info!("MDNS for peer {peer} expired {local:?} (lobby)");
+                        }
+                    }
+                    SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
+                        mdns::Event::Discovered(list),
+                    )) => {
+                        let local = OffsetDateTime::now_utc();
+                        for (peer, _) in list {
+                            self.swarm
+                                .behaviour_mut()
+                                .gossipsub
+                                .add_explicit_peer(&peer);
+                            log::info!("Discovered peer {peer} {local:?} (lobby)");
+                        }
+
+                    }
+                    _ => {}
+                    }
+                }
             );
         }
     }
@@ -508,6 +576,11 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             .await
             .unwrap();
 
+        let lobby_swarm =
+            crate::domolibp2p::start_lobby(shared_key, local_key_pair.clone(), loopback_only)
+                .await
+                .unwrap();
+
         let peer_id = swarm.local_peer_id().to_string();
 
         let (client_tx_channel, client_rx_channel) = mpsc::channel::<DomoEvent>(32);
@@ -524,6 +597,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             local_key_pair,
             loopback_only,
             swarm,
+            lobby_swarm,
             local_peer_id: peer_id,
             node_manager: NodeManager::new(key_pair_pkcs8_der, gen_fn),
             publish_cache_counter: 4,

@@ -58,13 +58,31 @@ pub async fn start(
     local_key_pair: identity::Keypair,
     loopback_only: bool,
 ) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
-    let local_peer_id = PeerId::from(local_key_pair.public());
+    let topics = [
+        Topic::new("domo-node-manager"),
+        Topic::new("domo-persistent-data"),
+        Topic::new("domo-volatile-data"),
+        Topic::new("domo-config"),
+    ];
+    start_with_topics(shared_key, local_key_pair, loopback_only, &topics).await
+}
 
-    // Create a Gossipsub topic
-    let topic_node_manager = Topic::new("domo-node-manager");
-    let topic_persistent_data = Topic::new("domo-persistent-data");
-    let topic_volatile_data = Topic::new("domo-volatile-data");
-    let topic_config = Topic::new("domo-config");
+pub async fn start_lobby(
+    shared_key: [u8; KEY_SIZE],
+    local_key_pair: identity::Keypair,
+    loopback_only: bool,
+) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
+    let topics = [Topic::new("domo-node-manager-lobby")];
+    start_with_topics(shared_key, local_key_pair, loopback_only, &topics).await
+}
+
+pub async fn start_with_topics(
+    shared_key: [u8; KEY_SIZE],
+    local_key_pair: identity::Keypair,
+    loopback_only: bool,
+    topics: &[Topic],
+) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
+    let local_peer_id = PeerId::from(local_key_pair.public());
 
     let psk = Some(PreSharedKey::new(shared_key));
 
@@ -104,17 +122,10 @@ pub async fn start(
         )
         .expect("Correct configuration");
 
-        // subscribes to node manager topic
-        gossipsub.subscribe(&topic_node_manager).unwrap();
-
-        // subscribes to persistent data topic
-        gossipsub.subscribe(&topic_persistent_data).unwrap();
-
-        // subscribes to volatile data topic
-        gossipsub.subscribe(&topic_volatile_data).unwrap();
-
-        // subscribes to config topic
-        gossipsub.subscribe(&topic_config).unwrap();
+        // subscribes to the GossipSub topics
+        for topic in topics {
+            gossipsub.subscribe(topic).unwrap();
+        }
 
         let behaviour = DomoBehaviour { mdns, gossipsub };
         //Swarm::new(transport, behaviour, local_peer_id)
