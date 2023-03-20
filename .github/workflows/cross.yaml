@@ -21,10 +21,8 @@ jobs:
         toolchain: stable
     - name: Install Cross
       run: |
-        wget https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz
-        tar -xvf cross-x86_64-unknown-linux-gnu.tar.gz
-        mv cross cross-util $HOME/.cargo/bin/
-        rm cross-x86_64-unknown-linux-gnu.tar.gz
+        curl -L "https://github.com/cross-rs/cross/releases/download/v0.2.5/cross-x86_64-unknown-linux-gnu.tar.gz" |
+        tar xz -C $HOME/.cargo/bin
     - name: Launch cross-compile.sh script
       run: |
         ./cross-compile.sh
