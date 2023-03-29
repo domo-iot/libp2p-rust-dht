@@ -32,7 +32,7 @@ impl DomoBroker {
             return Err(String::from("sqlite_file path needed"));
         }
 
-        let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache);
+        let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache).await;
 
         // Create a random local key.
         let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
