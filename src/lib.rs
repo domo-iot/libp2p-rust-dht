@@ -1,10 +1,7 @@
 pub mod domobroker;
-pub mod domocache;
-pub mod domolibp2p;
-pub mod domopersistentstorage;
 pub mod restmessage;
 pub mod utils;
 pub mod webapimanager;
 pub mod websocketmessage;
 
-pub use libp2p::identity::Keypair;
+use sifis_dht::*;

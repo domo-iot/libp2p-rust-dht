@@ -6,8 +6,8 @@ use std::error::Error;
 use tokio::io::{self, AsyncBufReadExt};
 
 use clap::Parser;
-use sifis_dht::domobroker::{DomoBroker, DomoBrokerConf};
 use sifis_dht::domocache::DomoEvent;
+use sifis_dht_broker::domobroker::{DomoBroker, DomoBrokerConf};
 
 #[derive(Parser, Debug)]
 struct Opt {

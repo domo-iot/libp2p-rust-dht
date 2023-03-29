@@ -1,0 +1,25 @@
+[package]
+name = "sifis-dht"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+vendored = ["rusqlite/bundled"]
+
+[dependencies]
+futures = "0.3.21"
+futures-util = "0.3.21"
+jsonpath_lib = "0.3.0"
+libp2p = { version = "0.50.0", features = ["tokio", "mdns", "gossipsub", "noise", "yamux", "pnet", "rsa", "tcp", "macros"] }
+log = "0.4.17"
+rand = "0.8"
+rusqlite = "0.28.0"
+serde = "1.0.137"
+serde_json = "1.0"
+time = "0.3.17"
+tokio = { version = "1.19.0", features = ["full"] }
+url = "2.2.2"
+
+
