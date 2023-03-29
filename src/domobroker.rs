@@ -8,7 +8,6 @@ use crate::webapimanager::WebApiManager;
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
-use libp2p::identity;
 use rsa::pkcs8::EncodePrivateKey;
 use rsa::RsaPrivateKey;
 use serde_json::json;
@@ -54,7 +53,7 @@ impl DomoBroker {
         } else {
             generate_rsa_key().1
         };
-        let local_key = identity::Keypair::rsa_from_pkcs8(&mut pkcs8_der)
+        let local_key = sifis_dht::Keypair::rsa_from_pkcs8(&mut pkcs8_der)
             .map_err(|e| format!("Couldn't load key: {e:?}"))?;
 
         let domo_cache = DomoCache::new(
