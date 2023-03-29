@@ -465,7 +465,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
         // Populate the cache with the sqlite contents
 
-        let ret = c.storage.get_all_elements();
+        let ret = c.storage.get_all_elements().await;
 
         for elem in ret {
             // non ripubblico
@@ -605,7 +605,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             }
 
             if persist {
-                self.storage.store(&cache_element);
+                self.storage.store(&cache_element).await;
             }
         }
 
@@ -671,7 +671,7 @@ mod tests {
     use crate::domopersistentstorage::SqliteStorage;
 
     async fn make_cache() -> super::DomoCache<SqliteStorage> {
-        let storage = SqliteStorage::new_in_memory();
+        let storage = SqliteStorage::new_in_memory().await;
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");

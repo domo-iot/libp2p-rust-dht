@@ -1,42 +1,24 @@
-use rusqlite::{params, Connection, OpenFlags};
-
 use crate::domocache::DomoCacheElement;
-
-use std::path::{Path, PathBuf};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteRow},
+    ConnectOptions, Connection, Executor, Row, SqliteConnection,
+};
+use std::path::Path;
 
 pub const SQLITE_MEMORY_STORAGE: &str = "<memory>";
 
+#[async_trait::async_trait]
 pub trait DomoPersistentStorage {
-    fn store(&mut self, element: &DomoCacheElement);
-    fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
+    async fn store(&mut self, element: &DomoCacheElement);
+    async fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
 }
 
 pub struct SqliteStorage {
-    pub sqlite_file: PathBuf,
-    pub sqlite_connection: Connection,
+    pub(crate) sqlite_connection: SqliteConnection,
 }
 
 impl SqliteStorage {
-    #[cfg(test)]
-    pub fn new_in_memory() -> Self {
-        Self::new(SQLITE_MEMORY_STORAGE, true)
-    }
-    pub fn new<P: AsRef<Path>>(sqlite_file: P, write_access: bool) -> Self {
-        let conn_res = if sqlite_file.as_ref().to_str() == Some(SQLITE_MEMORY_STORAGE) {
-            if !write_access {
-                panic!("Can't open in-memory database read-only!");
-            }
-            Connection::open_in_memory()
-        } else if !write_access {
-            Connection::open_with_flags(&sqlite_file, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        } else {
-            Connection::open(&sqlite_file)
-        };
-
-        let conn = match conn_res {
-            Ok(conn) => conn,
-            Err(e) => panic!("Error while opening the sqlite DB: {e:?}"),
-        };
+    async fn with_connection(mut conn: SqliteConnection, write_access: bool) -> Self {
         if write_access {
             _ = conn
                 .execute(
@@ -49,101 +31,109 @@ impl SqliteStorage {
                 publisher_peer_id       TEXT,
                 PRIMARY KEY (topic_name, topic_uuid)
                 )",
-                    [],
                 )
+                .await
                 .unwrap();
         }
 
         SqliteStorage {
-            sqlite_file: sqlite_file.as_ref().to_path_buf(),
             sqlite_connection: conn,
         }
     }
+
+    pub async fn new_in_memory() -> Self {
+        let conn = SqliteConnection::connect("sqlite::memory:").await.unwrap();
+
+        Self::with_connection(conn, true).await
+    }
+
+    pub async fn new<P: AsRef<Path>>(sqlite_file: P, write_access: bool) -> Self {
+        if let Some(s) = sqlite_file.as_ref().to_str() {
+            if s == SQLITE_MEMORY_STORAGE {
+                return Self::new_in_memory().await;
+            }
+        }
+        let conn = SqliteConnectOptions::new()
+            .filename(sqlite_file)
+            .read_only(!write_access)
+            .create_if_missing(write_access)
+            .connect()
+            .await
+            .expect("Cannot access the sqlite file");
+        Self::with_connection(conn, write_access).await
+    }
 }
 
+#[async_trait::async_trait]
 impl DomoPersistentStorage for SqliteStorage {
-    fn store(&mut self, element: &DomoCacheElement) {
-        let _ = match self.sqlite_connection.execute(
+    async fn store(&mut self, element: &DomoCacheElement) {
+        sqlx::query(
             "INSERT OR REPLACE INTO domo_data\
              (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
               VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                element.topic_name,
-                element.topic_uuid,
-                element.value.to_string(),
-                element.deleted,
-                element.publication_timestamp.to_string(),
-                element.publisher_peer_id
-            ],
-        ) {
-            Ok(ret) => ret,
-            Err(e) => panic!("Error while executing write operation on sqlite: {e:?}"),
-        };
+        )
+        .bind(&element.topic_name)
+        .bind(&element.topic_uuid)
+        .bind(&element.value.to_string())
+        .bind(&element.deleted)
+        .bind(&element.publication_timestamp.to_string())
+        .bind(&element.publisher_peer_id)
+        .execute(&mut self.sqlite_connection)
+        .await
+        .expect("database error");
     }
 
-    fn get_all_elements(&mut self) -> Vec<DomoCacheElement> {
-        // read all not deleted elements
-        let mut stmt = self
-            .sqlite_connection
-            .prepare("SELECT * FROM domo_data")
-            .unwrap();
+    async fn get_all_elements(&mut self) -> Vec<DomoCacheElement> {
+        sqlx::query("SELECT * FROM domo_data")
+            .try_map(|row: SqliteRow| {
+                let jvalue = row.get(2);
+                let jvalue = serde_json::from_str(jvalue);
 
-        let values_iter = stmt
-            .query_map([], |row| {
-                let jvalue: String = row.get(2)?;
-                let jvalue = serde_json::from_str(&jvalue);
-
-                let pub_timestamp_string: String = row.get(4)?;
+                let pub_timestamp_string: &str = row.get(4);
 
                 Ok(DomoCacheElement {
-                    topic_name: row.get(0)?,
-                    topic_uuid: row.get(1)?,
+                    topic_name: row.get(0),
+                    topic_uuid: row.get(1),
                     value: jvalue.unwrap(),
-                    deleted: row.get(3)?,
+                    deleted: row.get(3),
                     publication_timestamp: pub_timestamp_string.parse().unwrap(),
-                    publisher_peer_id: row.get(5)?,
+                    publisher_peer_id: row.get(5),
                     republication_timestamp: 0,
                 })
             })
-            .unwrap();
-
-        values_iter.collect::<Result<Vec<_>, _>>().unwrap()
+            .fetch_all(&mut self.sqlite_connection)
+            .await
+            .unwrap()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    #[test]
+    #[tokio::test]
     #[should_panic]
-    fn open_read_from_memory() {
-        let _s = super::SqliteStorage::new(super::SQLITE_MEMORY_STORAGE, false);
+    async fn open_read_from_memory() {
+        let _s = super::SqliteStorage::new(super::SQLITE_MEMORY_STORAGE, false).await;
     }
 
-    #[test]
+    #[tokio::test]
     #[should_panic]
-    fn open_read_non_existent_file() {
-        let _s = super::SqliteStorage::new("aaskdjkasdka.sqlite", false);
+    async fn open_read_non_existent_file() {
+        let _s = super::SqliteStorage::new("aaskdjkasdka.sqlite", false).await;
     }
 
-    #[test]
-    fn open_write_new_file() {
-        let s = super::SqliteStorage::new_in_memory();
-        assert_eq!(s.sqlite_file.to_str(), Some(super::SQLITE_MEMORY_STORAGE));
-    }
-
-    #[test]
-    fn test_initial_get_all_elements() {
+    #[tokio::test]
+    async fn test_initial_get_all_elements() {
         use super::DomoPersistentStorage;
 
-        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory();
-        let v = s.get_all_elements();
+        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory().await;
+        let v = s.get_all_elements().await;
         assert_eq!(v.len(), 0);
     }
 
-    #[test]
-    fn test_store() {
+    #[tokio::test]
+    async fn test_store() {
         use super::DomoPersistentStorage;
-        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory();
+        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory().await;
 
         let m = crate::domocache::DomoCacheElement {
             topic_name: "a".to_string(),
@@ -155,9 +145,9 @@ mod tests {
             republication_timestamp: 0,
         };
 
-        s.store(&m);
+        s.store(&m).await;
 
-        let v = s.get_all_elements();
+        let v = s.get_all_elements().await;
 
         assert_eq!(v.len(), 1);
         assert_eq!(v[0], m);
