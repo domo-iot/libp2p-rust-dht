@@ -668,10 +668,10 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::domopersistentstorage::SqliteStorage;
+    use crate::domopersistentstorage::SqlxStorage;
 
-    async fn make_cache() -> super::DomoCache<SqliteStorage> {
-        let storage = SqliteStorage::new_in_memory().await;
+    async fn make_cache() -> super::DomoCache<SqlxStorage> {
+        let storage = SqlxStorage::new_in_memory().await;
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");

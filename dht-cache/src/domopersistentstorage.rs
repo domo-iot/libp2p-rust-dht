@@ -13,11 +13,11 @@ pub trait DomoPersistentStorage {
     async fn get_all_elements(&mut self) -> Vec<DomoCacheElement>;
 }
 
-pub struct SqliteStorage {
-    pub(crate) sqlite_connection: AnyConnection,
+pub struct SqlxStorage {
+    pub(crate) connection: AnyConnection,
 }
 
-impl SqliteStorage {
+impl SqlxStorage {
     async fn with_connection(mut conn: AnyConnection, write_access: bool) -> Self {
         if write_access {
             _ = conn
@@ -36,9 +36,7 @@ impl SqliteStorage {
                 .unwrap();
         }
 
-        SqliteStorage {
-            sqlite_connection: conn,
-        }
+        Self { connection: conn }
     }
 
     pub async fn new_in_memory() -> Self {
@@ -66,7 +64,7 @@ impl SqliteStorage {
 }
 
 #[async_trait::async_trait]
-impl DomoPersistentStorage for SqliteStorage {
+impl DomoPersistentStorage for SqlxStorage {
     async fn store(&mut self, element: &DomoCacheElement) {
         sqlx::query(
             "INSERT OR REPLACE INTO domo_data\
@@ -79,7 +77,7 @@ impl DomoPersistentStorage for SqliteStorage {
         .bind(&element.deleted)
         .bind(&element.publication_timestamp.to_string())
         .bind(&element.publisher_peer_id)
-        .execute(&mut self.sqlite_connection)
+        .execute(&mut self.connection)
         .await
         .expect("database error");
     }
@@ -102,7 +100,7 @@ impl DomoPersistentStorage for SqliteStorage {
                     republication_timestamp: 0,
                 })
             })
-            .fetch_all(&mut self.sqlite_connection)
+            .fetch_all(&mut self.connection)
             .await
             .unwrap()
     }
@@ -113,20 +111,20 @@ mod tests {
     #[tokio::test]
     #[should_panic]
     async fn open_read_from_memory() {
-        let _s = super::SqliteStorage::new(super::SQLITE_MEMORY_STORAGE, false).await;
+        let _s = super::SqlxStorage::new(super::SQLITE_MEMORY_STORAGE, false).await;
     }
 
     #[tokio::test]
     #[should_panic]
     async fn open_read_non_existent_file() {
-        let _s = super::SqliteStorage::new("aaskdjkasdka.sqlite", false).await;
+        let _s = super::SqlxStorage::new("aaskdjkasdka.sqlite", false).await;
     }
 
     #[tokio::test]
     async fn test_initial_get_all_elements() {
         use super::DomoPersistentStorage;
 
-        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory().await;
+        let mut s = super::SqlxStorage::new_in_memory().await;
         let v = s.get_all_elements().await;
         assert_eq!(v.len(), 0);
     }
@@ -134,7 +132,7 @@ mod tests {
     #[tokio::test]
     async fn test_store() {
         use super::DomoPersistentStorage;
-        let mut s = crate::domopersistentstorage::SqliteStorage::new_in_memory().await;
+        let mut s = super::SqlxStorage::new_in_memory().await;
 
         let m = crate::domocache::DomoCacheElement {
             topic_name: "a".to_string(),

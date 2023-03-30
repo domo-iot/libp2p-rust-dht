@@ -2,7 +2,7 @@ use std::error::Error;
 use std::io::ErrorKind;
 
 use crate::domocache::{DomoCache, DomoEvent};
-use crate::domopersistentstorage::SqliteStorage;
+use crate::domopersistentstorage::SqlxStorage;
 use crate::restmessage;
 use crate::webapimanager::WebApiManager;
 use crate::websocketmessage::{
@@ -13,7 +13,7 @@ use rsa::RsaPrivateKey;
 use serde_json::json;
 
 pub struct DomoBroker {
-    pub domo_cache: DomoCache<SqliteStorage>,
+    pub domo_cache: DomoCache<SqlxStorage>,
     pub web_manager: WebApiManager,
 }
 
@@ -32,7 +32,7 @@ impl DomoBroker {
             return Err(String::from("sqlite_file path needed"));
         }
 
-        let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache).await;
+        let storage = SqlxStorage::new(conf.sqlite_file, conf.is_persistent_cache).await;
 
         // Create a random local key.
         let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
