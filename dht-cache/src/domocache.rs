@@ -418,7 +418,7 @@ impl DomoCache {
                         println!("Listening in {address:?}");
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
-                        libp2p::gossipsub::GossipsubEvent::Message {
+                        libp2p::gossipsub::Event::Message {
                             propagation_source: _peer_id,
                             message_id: _id,
                             message,
