@@ -15,6 +15,10 @@ struct Opt {
     #[clap(parse(try_from_str))]
     db_connection: String,
 
+    /// Path to a sqlite file
+    #[clap(parse(try_from_str))]
+    db_table: String,
+
     /// Path to a private key file
     #[clap(parse(try_from_str))]
     private_key_file: String,
@@ -46,6 +50,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let Opt {
         db_connection,
+        db_table,
         private_key_file,
         is_persistent_cache,
         shared_key,
@@ -60,6 +65,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let domo_broker_conf = DomoBrokerConf {
         db_connection,
+        db_table,
         private_key_file: Some(private_key_file),
         is_persistent_cache,
         shared_key,

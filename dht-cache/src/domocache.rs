@@ -671,7 +671,7 @@ mod tests {
     use crate::domopersistentstorage::SqlxStorage;
 
     async fn make_cache() -> super::DomoCache<SqlxStorage> {
-        let storage = SqlxStorage::new_in_memory().await;
+        let storage = SqlxStorage::new_in_memory("domo_data").await;
 
         let shared_key =
             String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");

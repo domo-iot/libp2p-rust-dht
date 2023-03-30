@@ -16,38 +16,44 @@ pub trait DomoPersistentStorage {
 
 pub struct SqlxStorage {
     pub(crate) connection: AnyConnection,
+    pub(crate) db_table: String
+
 }
 
 impl SqlxStorage {
-    async fn with_connection(mut conn: AnyConnection, write_access: bool) -> Self {
+    async fn with_connection(mut conn: AnyConnection, db_table: &str, write_access: bool) -> Self {
+
+        let create_table_command = "CREATE TABLE IF NOT EXISTS ".to_owned() + db_table
+            + " (
+            topic_name             TEXT,
+            topic_uuid             TEXT,
+            value                  TEXT,
+            deleted                INTEGER,
+            publication_timestamp   TEXT,
+            publisher_peer_id       TEXT,
+            PRIMARY KEY (topic_name, topic_uuid)
+        )";
+
         if write_access {
             _ = conn
                 .execute(
-                    "CREATE TABLE IF NOT EXISTS domo_data (
-                topic_name             TEXT,
-                topic_uuid             TEXT,
-                value                  TEXT,
-                deleted                INTEGER,
-                publication_timestamp   TEXT,
-                publisher_peer_id       TEXT,
-                PRIMARY KEY (topic_name, topic_uuid)
-                )",
+                    create_table_command.as_str()
                 )
                 .await
                 .unwrap();
         }
 
-        Self { connection: conn }
+        Self { connection: conn, db_table: db_table.to_string() }
     }
 
-    pub async fn new_in_memory() -> Self {
+    pub async fn new_in_memory(db_table: &str) -> Self {
         let conn = SqliteConnection::connect("sqlite::memory:").await.unwrap();
 
-        Self::with_connection(conn.into(), true).await
+        Self::with_connection(conn.into(), db_table,true).await
     }
 
     // TODO: reconsider write_access
-    pub async fn new<U: AsRef<str>>(url: U, write_access: bool) -> Self {
+    pub async fn new<U: AsRef<str>>(url: U, db_table: &str, write_access: bool) -> Self {
         let opts = AnyConnectOptions::from_str(url.as_ref()).expect("Cannot parse the uri");
 
         let opts: AnyConnectOptions = match opts.kind() {
@@ -60,29 +66,42 @@ impl SqlxStorage {
                 .unwrap()
                 .options([(
                     "default_transaction_read_only",
-                    if write_access { "on" } else { "off" },
+                    if write_access { "off" } else { "on" },
                 )])
-                .into(),
+                .into()
         };
 
-        let conn = opts.connect().await.expect("Cannot access the sqlite file");
+        let conn = opts.connect().await.expect("Cannot perform connection to the DB");
 
-        Self::with_connection(conn, write_access).await
+        Self::with_connection(conn, db_table, write_access).await
     }
 }
 
 #[async_trait::async_trait]
 impl DomoPersistentStorage for SqlxStorage {
     async fn store(&mut self, element: &DomoCacheElement) {
-        sqlx::query(
-            "INSERT OR REPLACE INTO domo_data\
+
+        let command: String = if self.connection.kind() == AnyKind::Sqlite {
+            "INSERT OR REPLACE INTO ".to_owned() + &self.db_table + " (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
+              VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+        } else if self.connection.kind() == AnyKind::Postgres {
+             "INSERT INTO ".to_owned()
+                + &self.db_table
+                + "
              (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
-              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+              VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT(topic_name, topic_uuid) DO UPDATE SET \
+              value = $3, deleted = $4, publication_timestamp = $5, publisher_peer_id = $6"
+        } else {
+            String::from("")
+        };
+
+        sqlx::query(
+            &command,
         )
         .bind(&element.topic_name)
         .bind(&element.topic_uuid)
         .bind(&element.value.to_string())
-        .bind(&element.deleted)
+        .bind(&i32::from(element.deleted))
         .bind(&element.publication_timestamp.to_string())
         .bind(&element.publisher_peer_id)
         .execute(&mut self.connection)
@@ -91,18 +110,22 @@ impl DomoPersistentStorage for SqlxStorage {
     }
 
     async fn get_all_elements(&mut self) -> Vec<DomoCacheElement> {
-        sqlx::query("SELECT * FROM domo_data")
+        let command = "SELECT * FROM ".to_owned() + &self.db_table;
+        sqlx::query(&command)
             .try_map(|row: AnyRow| {
                 let jvalue = row.get(2);
                 let jvalue = serde_json::from_str(jvalue);
 
                 let pub_timestamp_string: &str = row.get(4);
 
+                let del: i32 = row.get(3);
+                let deleted = del == 1;
+
                 Ok(DomoCacheElement {
                     topic_name: row.get(0),
                     topic_uuid: row.get(1),
                     value: jvalue.unwrap(),
-                    deleted: row.get(3),
+                    deleted,
                     publication_timestamp: pub_timestamp_string.parse().unwrap(),
                     publisher_peer_id: row.get(5),
                     republication_timestamp: 0,
@@ -117,30 +140,40 @@ impl DomoPersistentStorage for SqlxStorage {
 #[cfg(test)]
 mod tests {
     #[tokio::test]
-    #[should_panic]
     async fn open_read_from_memory() {
-        let _s = super::SqlxStorage::new("sqlite::memory:", false).await;
+        let _s = super::SqlxStorage::new("sqlite::memory:", "domo_data", false).await;
     }
 
     #[tokio::test]
     #[should_panic]
     async fn open_read_non_existent_file() {
-        let _s = super::SqlxStorage::new("sqlite://aaskdjkasdka.sqlite", false).await;
+        let _s = super::SqlxStorage::new("sqlite://aaskdjkasdka.sqlite", "domo_data", false).await;
     }
+
+    #[tokio::test]
+    async fn test_pgsql_db_connection() {
+        let _s = super::SqlxStorage::new("postgres://postgres:mysecretpassword@localhost/postgres", "domo_test_pgsql_connection", true).await;
+    }
+
 
     #[tokio::test]
     async fn test_initial_get_all_elements() {
         use super::DomoPersistentStorage;
 
-        let mut s = super::SqlxStorage::new_in_memory().await;
+        let mut s = super::SqlxStorage::new_in_memory("domo_data").await;
         let v = s.get_all_elements().await;
         assert_eq!(v.len(), 0);
+
+        let mut s = super::SqlxStorage::new("postgres://postgres:mysecretpassword@localhost/postgres", "test_initial_get_all_elements", true).await;
+        let v = s.get_all_elements().await;
+        assert_eq!(v.len(), 0);
+
     }
 
     #[tokio::test]
     async fn test_store() {
         use super::DomoPersistentStorage;
-        let mut s = super::SqlxStorage::new_in_memory().await;
+        let mut s = super::SqlxStorage::new_in_memory("domo_data").await;
 
         let m = crate::domocache::DomoCacheElement {
             topic_name: "a".to_string(),
@@ -158,5 +191,15 @@ mod tests {
 
         assert_eq!(v.len(), 1);
         assert_eq!(v[0], m);
+
+        let mut s = super::SqlxStorage::new("postgres://postgres:mysecretpassword@localhost/postgres", "test_store", true).await;
+
+        s.store(&m).await;
+
+        let v = s.get_all_elements().await;
+
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0], m);
+
     }
 }

@@ -19,6 +19,7 @@ pub struct DomoBroker {
 
 pub struct DomoBrokerConf {
     pub db_connection: String,
+    pub db_table: String,
     pub private_key_file: Option<String>,
     pub is_persistent_cache: bool,
     pub shared_key: String,
@@ -32,7 +33,7 @@ impl DomoBroker {
             return Err(String::from("db_connection path needed"));
         }
 
-        let storage = SqlxStorage::new(conf.db_connection, conf.is_persistent_cache).await;
+        let storage = SqlxStorage::new(conf.db_connection, &conf.db_table, conf.is_persistent_cache).await;
 
         // Create a random local key.
         let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
@@ -317,6 +318,7 @@ mod tests {
     async fn setup_broker(http_port: u16) -> DomoBroker {
         let domo_broker_conf = super::DomoBrokerConf {
             db_connection: "sqlite::memory:".to_string(),
+            db_table: "domo_data".to_string(),
             is_persistent_cache: true,
             shared_key: String::from(
                 "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
