@@ -1,7 +1,5 @@
-use crate::domocache::DomoCacheElement;
-use sea_query::{
-    Alias, ColumnDef, Iden, Index, PostgresQueryBuilder, Query, SqliteQueryBuilder, Table,
-};
+use crate::domocache::{DomoCacheConfig, DomoCacheElement};
+use sea_query::{Alias, ColumnDef, Iden, Index, OnConflict, PostgresQueryBuilder, Query, SqliteQueryBuilder, Table};
 use sea_query_binder::SqlxBinder;
 use sqlx::{
     any::{AnyConnectOptions, AnyKind, AnyRow},
@@ -11,6 +9,22 @@ use sqlx::{
 };
 
 use std::str::FromStr;
+
+pub struct DomoDataBaseConfig{
+    pub db_url: String, // db layer
+    pub db_table: String, // db layer
+    pub is_persistent_cache: bool // dht layer and db layer
+}
+
+impl DomoDataBaseConfig{
+    pub fn from(domo_cache_config: &DomoCacheConfig) -> Self {
+        DomoDataBaseConfig{
+            db_url: domo_cache_config.db_url.clone(),
+            db_table: domo_cache_config.db_table.clone(),
+            is_persistent_cache: domo_cache_config.is_persistent_cache
+        }
+    }
+}
 
 #[async_trait::async_trait]
 pub trait DomoPersistentStorage {
@@ -82,20 +96,20 @@ impl SqlxStorage {
     }
 
     // TODO: reconsider write_access
-    pub async fn new<U: AsRef<str>>(url: U, db_table: &str, write_access: bool) -> Self {
-        let opts = AnyConnectOptions::from_str(url.as_ref()).expect("Cannot parse the uri");
+    pub async fn new (db_config: &DomoDataBaseConfig) -> Self {
+        let opts = AnyConnectOptions::from_str(db_config.db_url.as_ref()).expect("Cannot parse the uri");
 
         let opts: AnyConnectOptions = match opts.kind() {
             AnyKind::Sqlite => SqliteConnectOptions::try_from(opts)
                 .unwrap()
-                .read_only(!write_access)
-                .create_if_missing(write_access)
+                .read_only(!db_config.is_persistent_cache)
+                .create_if_missing(db_config.is_persistent_cache)
                 .into(),
             AnyKind::Postgres => PgConnectOptions::try_from(opts)
                 .unwrap()
                 .options([(
                     "default_transaction_read_only",
-                    if write_access { "off" } else { "on" },
+                    if db_config.is_persistent_cache { "off" } else { "on" },
                 )])
                 .into(),
         };
@@ -105,7 +119,7 @@ impl SqlxStorage {
             .await
             .expect("Cannot perform connection to the DB");
 
-        Self::with_connection(conn, db_table, write_access).await
+        Self::with_connection(conn, &db_config.db_table, db_config.is_persistent_cache).await
     }
 }
 
@@ -114,7 +128,6 @@ impl DomoPersistentStorage for SqlxStorage {
     async fn store(&mut self, element: &DomoCacheElement) {
         let mut insert = Query::insert();
         let sql = insert
-            .replace()
             .into_table(self.db_table.clone())
             .columns([
                 Id::TopicName,
@@ -131,7 +144,16 @@ impl DomoPersistentStorage for SqlxStorage {
                 i32::from(element.deleted).into(),
                 element.publication_timestamp.to_string().into(),
                 element.publisher_peer_id.to_string().into(),
-            ]);
+            ]).on_conflict(
+            OnConflict::columns( [Id::TopicName, Id::TopicUuid])
+                .update_columns([
+                    Id::Value,
+                    Id::Deleted,
+                    Id::PublicationTimestamp,
+                    Id::PublisherPeerId])
+                .to_owned(),
+        );
+
         let (sql, values) = match self.connection.kind() {
             AnyKind::Sqlite => sql.build_sqlx(SqliteQueryBuilder),
             AnyKind::Postgres => sql.build_sqlx(PostgresQueryBuilder),
@@ -187,25 +209,39 @@ impl DomoPersistentStorage for SqlxStorage {
 
 #[cfg(test)]
 mod tests {
+    use crate::domopersistentstorage::DomoDataBaseConfig;
+
     #[tokio::test]
     async fn open_read_from_memory() {
-        let _s = super::SqlxStorage::new("sqlite::memory:", "domo_data", false).await;
+        let db_config = DomoDataBaseConfig {
+            db_url: "sqlite::memory:".to_string(),
+            db_table: "domo_data".to_string(),
+            is_persistent_cache: false
+        };
+        let _s = super::SqlxStorage::new(&db_config).await;
     }
 
     #[tokio::test]
     #[should_panic]
     async fn open_read_non_existent_file() {
-        let _s = super::SqlxStorage::new("sqlite://aaskdjkasdka.sqlite", "domo_data", false).await;
+        let db_config = DomoDataBaseConfig {
+            db_url: "sqlite://aaskdjkasdka.sqlite".to_string(),
+            db_table: "domo_data".to_string(),
+            is_persistent_cache: false
+        };
+        let _s = super::SqlxStorage::new(&db_config).await;
     }
 
     #[tokio::test]
     async fn test_pgsql_db_connection() {
-        let _s = super::SqlxStorage::new(
-            "postgres://postgres:mysecretpassword@localhost/postgres",
-            "domo_test_pgsql_connection",
-            true,
-        )
-        .await;
+
+        let db_config = DomoDataBaseConfig {
+            db_url: "postgres://postgres:mysecretpassword@localhost/postgres".to_string(),
+            db_table: "domo_test_pgsql_connection".to_string(),
+            is_persistent_cache: true
+        };
+
+        let _s = super::SqlxStorage::new(&db_config).await;
     }
 
     #[tokio::test]
@@ -216,12 +252,14 @@ mod tests {
         let v = s.get_all_elements().await;
         assert_eq!(v.len(), 0);
 
-        let mut s = super::SqlxStorage::new(
-            "postgres://postgres:mysecretpassword@localhost/postgres",
-            "test_initial_get_all_elements",
-            true,
-        )
-        .await;
+
+        let db_config = DomoDataBaseConfig {
+            db_url: "postgres://postgres:mysecretpassword@localhost/postgres".to_string(),
+            db_table: "test_initial_get_all_elements".to_string(),
+            is_persistent_cache: true
+        };
+
+        let mut s = super::SqlxStorage::new(&db_config).await;
         let v = s.get_all_elements().await;
         assert_eq!(v.len(), 0);
     }
@@ -248,12 +286,13 @@ mod tests {
         assert_eq!(v.len(), 1);
         assert_eq!(v[0], m);
 
-        let mut s = super::SqlxStorage::new(
-            "postgres://postgres:mysecretpassword@localhost/postgres",
-            "test_store",
-            true,
-        )
-        .await;
+        let db_config = DomoDataBaseConfig {
+            db_url: "postgres://postgres:mysecretpassword@localhost/postgres".to_string(),
+            db_table: "test_store".to_string(),
+            is_persistent_cache: true
+        };
+
+        let mut s = super::SqlxStorage::new(&db_config).await;
 
         s.store(&m).await;
 
