@@ -467,18 +467,23 @@ impl DomoCache {
         }
     }
 
-    pub async fn new(conf: &DomoCacheConfig) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(conf: DomoCacheConfig) -> Result<Self, Box<dyn Error>> {
 
         if conf.db_url.is_empty() {
             panic!("db_url needed");
         }
 
-        let db_conf = DomoDataBaseConfig::from(conf);
+        let is_persistent_cache = conf.is_persistent_cache;
+        let loopback_only = conf.loopback_only;
+        let shared_key = conf.shared_key.clone();
+        let private_key_file = conf.private_key_file.clone();
 
+        let db_conf = DomoDataBaseConfig::from(conf);
         let storage = SqlxStorage::new(&db_conf).await;
 
+
         // Create a random local key.
-        let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file.clone() {
+        let mut pkcs8_der = if let Some(pk_path) = private_key_file {
             match std::fs::read(&pk_path) {
                 Ok(pem) => {
                     let der = pem_rfc7468::decode_vec(&pem)
@@ -500,7 +505,7 @@ impl DomoCache {
         let local_key_pair = Keypair::rsa_from_pkcs8(&mut pkcs8_der)
             .map_err(|e| format!("Couldn't load key: {e:?}"))?;
 
-        let swarm = crate::domolibp2p::start(conf.shared_key.clone(), local_key_pair, conf.loopback_only)
+        let swarm = crate::domolibp2p::start(shared_key, local_key_pair, loopback_only)
             .await
             .unwrap();
 
@@ -512,7 +517,7 @@ impl DomoCache {
             tokio::time::Instant::now() + Duration::from_secs(u64::from(SEND_CACHE_HASH_PERIOD));
 
         let mut c = DomoCache {
-            is_persistent_cache: conf.is_persistent_cache,
+            is_persistent_cache,
             swarm,
             local_peer_id: peer_id,
             publish_cache_counter: 4,
@@ -742,7 +747,7 @@ mod tests {
             loopback_only: false
         };
 
-        if let Ok(cache) = super::DomoCache::new(&conf).await {
+        if let Ok(cache) = super::DomoCache::new(conf).await {
             return cache;
         }
 

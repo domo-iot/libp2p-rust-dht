@@ -16,8 +16,9 @@ pub struct DomoDataBaseConfig{
     pub is_persistent_cache: bool // dht layer and db layer
 }
 
-impl DomoDataBaseConfig{
-    pub fn from(domo_cache_config: &DomoCacheConfig) -> Self {
+
+impl From<DomoCacheConfig> for DomoDataBaseConfig {
+    fn from(domo_cache_config: DomoCacheConfig) -> Self {
         DomoDataBaseConfig{
             db_url: domo_cache_config.db_url.clone(),
             db_table: domo_cache_config.db_table.clone(),
@@ -25,6 +26,7 @@ impl DomoDataBaseConfig{
         }
     }
 }
+
 
 #[async_trait::async_trait]
 pub trait DomoPersistentStorage {

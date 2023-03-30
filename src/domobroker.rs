@@ -25,8 +25,8 @@ pub struct DomoBrokerConf {
     pub http_port: u16, // broker layer
 }
 
-impl DomoBrokerConf {
-    pub fn extract_domo_cache_conf(&self) -> DomoCacheConfig {
+impl Into<DomoCacheConfig> for DomoBrokerConf {
+    fn into(self) -> DomoCacheConfig {
         DomoCacheConfig {
             db_url: self.db_url.clone(),
             db_table: self.db_table.clone(),
@@ -41,12 +41,14 @@ impl DomoBrokerConf {
 impl DomoBroker {
     pub async fn new(conf: DomoBrokerConf) -> Result<Self, Box<dyn Error>> {
 
-        let domo_cache_conf = conf.extract_domo_cache_conf();
+        let http_port = conf.http_port;
 
-        let domo_cache = DomoCache::new(&domo_cache_conf)
+        let domo_cache_conf: DomoCacheConfig = conf.into();
+
+        let domo_cache = DomoCache::new(domo_cache_conf)
         .await?;
 
-        let web_manager = WebApiManager::new(conf.http_port);
+        let web_manager = WebApiManager::new(http_port);
 
         Ok(DomoBroker {
             domo_cache,
