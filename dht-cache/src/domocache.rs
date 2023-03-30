@@ -29,7 +29,7 @@ fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
         .unwrap()
         .as_bytes()
         .to_vec();
-    let der = private_key.to_pkcs8_der().unwrap().as_ref().to_vec();
+    let der = private_key.to_pkcs8_der().unwrap().as_bytes().to_vec();
     (pem, der)
 }
 
