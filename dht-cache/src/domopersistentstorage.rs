@@ -1,7 +1,7 @@
 use crate::domocache::DomoCacheElement;
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteRow},
-    ConnectOptions, Connection, Executor, Row, SqliteConnection,
+    any::AnyRow, sqlite::SqliteConnectOptions, AnyConnection, ConnectOptions, Connection, Executor,
+    Row, SqliteConnection,
 };
 use std::path::Path;
 
@@ -14,11 +14,11 @@ pub trait DomoPersistentStorage {
 }
 
 pub struct SqliteStorage {
-    pub(crate) sqlite_connection: SqliteConnection,
+    pub(crate) sqlite_connection: AnyConnection,
 }
 
 impl SqliteStorage {
-    async fn with_connection(mut conn: SqliteConnection, write_access: bool) -> Self {
+    async fn with_connection(mut conn: AnyConnection, write_access: bool) -> Self {
         if write_access {
             _ = conn
                 .execute(
@@ -44,7 +44,7 @@ impl SqliteStorage {
     pub async fn new_in_memory() -> Self {
         let conn = SqliteConnection::connect("sqlite::memory:").await.unwrap();
 
-        Self::with_connection(conn, true).await
+        Self::with_connection(conn.into(), true).await
     }
 
     pub async fn new<P: AsRef<Path>>(sqlite_file: P, write_access: bool) -> Self {
@@ -60,7 +60,8 @@ impl SqliteStorage {
             .connect()
             .await
             .expect("Cannot access the sqlite file");
-        Self::with_connection(conn, write_access).await
+
+        Self::with_connection(conn.into(), write_access).await
     }
 }
 
@@ -85,7 +86,7 @@ impl DomoPersistentStorage for SqliteStorage {
 
     async fn get_all_elements(&mut self) -> Vec<DomoCacheElement> {
         sqlx::query("SELECT * FROM domo_data")
-            .try_map(|row: SqliteRow| {
+            .try_map(|row: AnyRow| {
                 let jvalue = row.get(2);
                 let jvalue = serde_json::from_str(jvalue);
 
