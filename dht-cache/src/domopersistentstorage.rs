@@ -1,6 +1,7 @@
 use crate::domocache::DomoCacheElement;
 use sqlx::{
     any::{AnyConnectOptions, AnyKind, AnyRow},
+    postgres::PgConnectOptions,
     sqlite::SqliteConnectOptions,
     AnyConnection, ConnectOptions, Connection, Executor, Row, SqliteConnection,
 };
@@ -54,6 +55,13 @@ impl SqlxStorage {
                 .unwrap()
                 .read_only(!write_access)
                 .create_if_missing(write_access)
+                .into(),
+            AnyKind::Postgres => PgConnectOptions::try_from(opts)
+                .unwrap()
+                .options([(
+                    "default_transaction_read_only",
+                    if write_access { "on" } else { "off" },
+                )])
                 .into(),
         };
 
