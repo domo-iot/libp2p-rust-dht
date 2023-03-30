@@ -13,31 +13,31 @@ use sifis_dht_broker::domobroker::{DomoBroker, DomoBrokerConf};
 struct Opt {
     /// Path to a sqlite file
     #[clap(parse(try_from_str))]
-    db_connection: String,
+    db_url: String,
 
     /// Path to a sqlite file
     #[clap(parse(try_from_str))]
     db_table: String,
 
-    /// Path to a private key file
-    #[clap(parse(try_from_str))]
-    private_key_file: String,
-
     /// Use a persistent cache
     #[clap(parse(try_from_str))]
     is_persistent_cache: bool,
+
+    /// Path to a private key file
+    #[clap(parse(try_from_str))]
+    private_key_file: String,
 
     /// 32 bytes long shared key in hex format
     #[clap(parse(try_from_str))]
     shared_key: String,
 
-    /// HTTP port
-    #[clap(parse(try_from_str))]
-    http_port: u16,
-
     /// use only loopback iface for libp2p
     #[clap(parse(try_from_str))]
     loopback_only: bool,
+
+    /// HTTP port
+    #[clap(parse(try_from_str))]
+    http_port: u16,
 }
 
 #[tokio::main]
@@ -49,7 +49,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("Program started at {:?}", local);
 
     let Opt {
-        db_connection,
+        db_url,
         db_table,
         private_key_file,
         is_persistent_cache,
@@ -64,7 +64,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let debug_console = std::env::var("DHT_DEBUG_CONSOLE").is_ok();
 
     let domo_broker_conf = DomoBrokerConf {
-        db_connection,
+        db_url,
         db_table,
         private_key_file: Some(private_key_file),
         is_persistent_cache,

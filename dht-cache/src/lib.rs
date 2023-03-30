@@ -1,3 +1,5 @@
+extern crate core;
+
 pub mod domocache;
 pub mod domolibp2p;
 pub mod domopersistentstorage;

@@ -1,70 +1,50 @@
 use std::error::Error;
-use std::io::ErrorKind;
 
 use crate::domocache::{DomoCache, DomoEvent};
-use crate::domopersistentstorage::SqlxStorage;
 use crate::restmessage;
 use crate::webapimanager::WebApiManager;
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
-use rsa::pkcs8::EncodePrivateKey;
-use rsa::RsaPrivateKey;
+
 use serde_json::json;
+use sifis_dht::domocache::DomoCacheConfig;
 
 pub struct DomoBroker {
-    pub domo_cache: DomoCache<SqlxStorage>,
+    pub domo_cache: DomoCache,
     pub web_manager: WebApiManager,
 }
 
 pub struct DomoBrokerConf {
-    pub db_connection: String,
-    pub db_table: String,
-    pub private_key_file: Option<String>,
-    pub is_persistent_cache: bool,
-    pub shared_key: String,
-    pub http_port: u16,
-    pub loopback_only: bool,
+    pub db_url: String, // db layer
+    pub db_table: String, // db layer
+    pub is_persistent_cache: bool, // dht layer and db layer
+    pub private_key_file: Option<String>, // dht layer
+    pub shared_key: String, // dht layer
+    pub loopback_only: bool, // dht layer
+    pub http_port: u16, // broker layer
+}
+
+impl DomoBrokerConf {
+    pub fn extract_domo_cache_conf(&self) -> DomoCacheConfig {
+        DomoCacheConfig {
+            db_url: self.db_url.clone(),
+            db_table: self.db_table.clone(),
+            is_persistent_cache: self.is_persistent_cache,
+            private_key_file: self.private_key_file.clone(),
+            shared_key: self.shared_key.clone(),
+            loopback_only: self.loopback_only
+        }
+    }
 }
 
 impl DomoBroker {
-    pub async fn new(conf: DomoBrokerConf) -> Result<Self, String> {
-        if conf.db_connection.is_empty() {
-            return Err(String::from("db_connection path needed"));
-        }
+    pub async fn new(conf: DomoBrokerConf) -> Result<Self, Box<dyn Error>> {
 
-        let storage = SqlxStorage::new(conf.db_connection, &conf.db_table, conf.is_persistent_cache).await;
+        let domo_cache_conf = conf.extract_domo_cache_conf();
 
-        // Create a random local key.
-        let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
-            match std::fs::read(&pk_path) {
-                Ok(pem) => {
-                    let der = pem_rfc7468::decode_vec(&pem)
-                        .map_err(|e| format!("Couldn't decode pem: {e:?}"))?;
-                    der.1
-                }
-                Err(e) if e.kind() == ErrorKind::NotFound => {
-                    // Generate a new key and put it into the file at the given path
-                    let (pem, der) = generate_rsa_key();
-                    std::fs::write(pk_path, pem).expect("Couldn't save ");
-                    der
-                }
-                Err(e) => Err(format!("Couldn't load key file: {e:?}"))?,
-            }
-        } else {
-            generate_rsa_key().1
-        };
-        let local_key = sifis_dht::Keypair::rsa_from_pkcs8(&mut pkcs8_der)
-            .map_err(|e| format!("Couldn't load key: {e:?}"))?;
-
-        let domo_cache = DomoCache::new(
-            conf.is_persistent_cache,
-            storage,
-            conf.shared_key,
-            local_key,
-            conf.loopback_only,
-        )
-        .await;
+        let domo_cache = DomoCache::new(&domo_cache_conf)
+        .await?;
 
         let web_manager = WebApiManager::new(conf.http_port);
 
@@ -297,18 +277,6 @@ impl DomoBroker {
     }
 }
 
-fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
-    let mut rng = rand::thread_rng();
-    let bits = 2048;
-    let private_key = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-    let pem = private_key
-        .to_pkcs8_pem(Default::default())
-        .unwrap()
-        .as_bytes()
-        .to_vec();
-    let der = private_key.to_pkcs8_der().unwrap().as_ref().to_vec();
-    (pem, der)
-}
 
 #[cfg(test)]
 mod tests {
@@ -317,7 +285,7 @@ mod tests {
 
     async fn setup_broker(http_port: u16) -> DomoBroker {
         let domo_broker_conf = super::DomoBrokerConf {
-            db_connection: "sqlite::memory:".to_string(),
+            db_url: "sqlite::memory:".to_string(),
             db_table: "domo_data".to_string(),
             is_persistent_cache: true,
             shared_key: String::from(
