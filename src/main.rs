@@ -11,31 +11,40 @@ use sifis_dht_broker::domobroker::{DomoBroker, DomoBrokerConf};
 
 #[derive(Parser, Debug)]
 struct Opt {
-    /// Path to a sqlite file
+    /// Database URL in sqlx format
+    ///
+    /// - "sqlite::memory:"
+    ///
+    /// - "sqlite://aaskdjkasdka.sqlite"
+    ///
+    /// - "postgres://postgres:mysecretpassword@localhost/postgres"
     #[clap(parse(try_from_str))]
     db_url: String,
 
-    /// Path to a sqlite file
+    /// Name of the table that will be used to store the dht messages
     #[clap(parse(try_from_str))]
     db_table: String,
 
-    /// Use a persistent cache
+    /// Indicates if the broker should persist the DHT messages into the DB
+    /// or if the DB will only be used to populate the DHT cache when the broker starts
     #[clap(parse(try_from_str))]
     is_persistent_cache: bool,
 
-    /// Path to a private key file
+    /// Path to the private key file of the broker. If the path does not exist a key file
+    /// will be automatically generated
     #[clap(parse(try_from_str))]
     private_key_file: String,
 
     /// 32 bytes long shared key in hex format
+    /// used to protect access to the DHT
     #[clap(parse(try_from_str))]
     shared_key: String,
 
-    /// use only loopback iface for libp2p
+    /// Use only loopback iface for libp2p
     #[clap(parse(try_from_str))]
     loopback_only: bool,
 
-    /// HTTP port
+    /// HTTP port used by the broker
     #[clap(parse(try_from_str))]
     http_port: u16,
 }
