@@ -13,7 +13,7 @@ use sifis_dht_broker::domobroker::{DomoBroker, DomoBrokerConf};
 struct Opt {
     /// Path to a sqlite file
     #[clap(parse(try_from_str))]
-    sqlite_file: String,
+    db_connection: String,
 
     /// Path to a private key file
     #[clap(parse(try_from_str))]
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     log::info!("Program started at {:?}", local);
 
     let Opt {
-        sqlite_file,
+        db_connection,
         private_key_file,
         is_persistent_cache,
         shared_key,
@@ -59,7 +59,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let debug_console = std::env::var("DHT_DEBUG_CONSOLE").is_ok();
 
     let domo_broker_conf = DomoBrokerConf {
-        sqlite_file,
+        db_connection,
         private_key_file: Some(private_key_file),
         is_persistent_cache,
         shared_key,

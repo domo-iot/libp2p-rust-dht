@@ -1,11 +1,11 @@
 use crate::domocache::DomoCacheElement;
 use sqlx::{
-    any::AnyRow, sqlite::SqliteConnectOptions, AnyConnection, ConnectOptions, Connection, Executor,
-    Row, SqliteConnection,
+    any::{AnyConnectOptions, AnyKind, AnyRow},
+    sqlite::SqliteConnectOptions,
+    AnyConnection, ConnectOptions, Connection, Executor, Row, SqliteConnection,
 };
-use std::path::Path;
 
-pub const SQLITE_MEMORY_STORAGE: &str = "<memory>";
+use std::str::FromStr;
 
 #[async_trait::async_trait]
 pub trait DomoPersistentStorage {
@@ -45,21 +45,21 @@ impl SqlxStorage {
         Self::with_connection(conn.into(), true).await
     }
 
-    pub async fn new<P: AsRef<Path>>(sqlite_file: P, write_access: bool) -> Self {
-        if let Some(s) = sqlite_file.as_ref().to_str() {
-            if s == SQLITE_MEMORY_STORAGE {
-                return Self::new_in_memory().await;
-            }
-        }
-        let conn = SqliteConnectOptions::new()
-            .filename(sqlite_file)
-            .read_only(!write_access)
-            .create_if_missing(write_access)
-            .connect()
-            .await
-            .expect("Cannot access the sqlite file");
+    // TODO: reconsider write_access
+    pub async fn new<U: AsRef<str>>(url: U, write_access: bool) -> Self {
+        let opts = AnyConnectOptions::from_str(url.as_ref()).expect("Cannot parse the uri");
 
-        Self::with_connection(conn.into(), write_access).await
+        let opts: AnyConnectOptions = match opts.kind() {
+            AnyKind::Sqlite => SqliteConnectOptions::try_from(opts)
+                .unwrap()
+                .read_only(!write_access)
+                .create_if_missing(write_access)
+                .into(),
+        };
+
+        let conn = opts.connect().await.expect("Cannot access the sqlite file");
+
+        Self::with_connection(conn, write_access).await
     }
 }
 
@@ -111,13 +111,13 @@ mod tests {
     #[tokio::test]
     #[should_panic]
     async fn open_read_from_memory() {
-        let _s = super::SqlxStorage::new(super::SQLITE_MEMORY_STORAGE, false).await;
+        let _s = super::SqlxStorage::new("sqlite::memory:", false).await;
     }
 
     #[tokio::test]
     #[should_panic]
     async fn open_read_non_existent_file() {
-        let _s = super::SqlxStorage::new("aaskdjkasdka.sqlite", false).await;
+        let _s = super::SqlxStorage::new("sqlite://aaskdjkasdka.sqlite", false).await;
     }
 
     #[tokio::test]

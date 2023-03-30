@@ -18,7 +18,7 @@ pub struct DomoBroker {
 }
 
 pub struct DomoBrokerConf {
-    pub sqlite_file: String,
+    pub db_connection: String,
     pub private_key_file: Option<String>,
     pub is_persistent_cache: bool,
     pub shared_key: String,
@@ -28,11 +28,11 @@ pub struct DomoBrokerConf {
 
 impl DomoBroker {
     pub async fn new(conf: DomoBrokerConf) -> Result<Self, String> {
-        if conf.sqlite_file.is_empty() {
-            return Err(String::from("sqlite_file path needed"));
+        if conf.db_connection.is_empty() {
+            return Err(String::from("db_connection path needed"));
         }
 
-        let storage = SqlxStorage::new(conf.sqlite_file, conf.is_persistent_cache).await;
+        let storage = SqlxStorage::new(conf.db_connection, conf.is_persistent_cache).await;
 
         // Create a random local key.
         let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
@@ -315,9 +315,8 @@ mod tests {
     use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
 
     async fn setup_broker(http_port: u16) -> DomoBroker {
-        let sqlite_file = crate::domopersistentstorage::SQLITE_MEMORY_STORAGE.to_owned();
         let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file,
+            db_connection: "sqlite::memory:".to_string(),
             is_persistent_cache: true,
             shared_key: String::from(
                 "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
