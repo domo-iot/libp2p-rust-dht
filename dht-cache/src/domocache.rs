@@ -5,6 +5,8 @@ use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::identity::Keypair;
 use libp2p::mdns;
 use libp2p::swarm::SwarmEvent;
+use rsa::pkcs8::EncodePrivateKey;
+use rsa::RsaPrivateKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
@@ -17,8 +19,6 @@ use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
-use rsa::pkcs8::EncodePrivateKey;
-use rsa::RsaPrivateKey;
 
 fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
     let mut rng = rand::thread_rng();
@@ -33,14 +33,13 @@ fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
     (pem, der)
 }
 
-
 pub struct DomoCacheConfig {
-    pub db_url: String, // db layer
-    pub db_table: String, // db layer
-    pub is_persistent_cache: bool, // dht layer and db layer
+    pub db_url: String,                   // db layer
+    pub db_table: String,                 // db layer
+    pub is_persistent_cache: bool,        // dht layer and db layer
     pub private_key_file: Option<String>, // dht layer
-    pub shared_key: String, // dht layer
-    pub loopback_only: bool // dht layer
+    pub shared_key: String,               // dht layer
+    pub loopback_only: bool,              // dht layer
 }
 
 impl DomoCacheConfig {
@@ -48,7 +47,7 @@ impl DomoCacheConfig {
         DomoDataBaseConfig {
             db_url: self.db_url.clone(),
             db_table: self.db_table.clone(),
-            is_persistent_cache: self.is_persistent_cache
+            is_persistent_cache: self.is_persistent_cache,
         }
     }
 }
@@ -468,7 +467,6 @@ impl DomoCache {
     }
 
     pub async fn new(conf: DomoCacheConfig) -> Result<Self, Box<dyn Error>> {
-
         if conf.db_url.is_empty() {
             panic!("db_url needed");
         }
@@ -480,7 +478,6 @@ impl DomoCache {
 
         let db_conf = DomoDataBaseConfig::from(conf);
         let storage = SqlxStorage::new(&db_conf).await;
-
 
         // Create a random local key.
         let mut pkcs8_der = if let Some(pk_path) = private_key_file {
@@ -737,14 +734,14 @@ mod tests {
     use crate::domocache::DomoCacheConfig;
 
     async fn make_cache() -> super::DomoCache {
-
-        let conf = DomoCacheConfig{
+        let conf = DomoCacheConfig {
             db_url: "sqlite::memory:".to_string(),
             db_table: "domo_data".to_string(),
             is_persistent_cache: true,
             private_key_file: Some("/tmp/test_key.pem".to_string()),
-            shared_key: "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9".to_string(),
-            loopback_only: false
+            shared_key: "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9"
+                .to_string(),
+            loopback_only: false,
         };
 
         if let Ok(cache) = super::DomoCache::new(conf).await {
@@ -752,7 +749,6 @@ mod tests {
         }
 
         panic!("cannot create cache");
-
     }
 
     #[tokio::test]
@@ -779,7 +775,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_write_and_read_key()  {
+    async fn test_write_and_read_key() {
         let mut domo_cache = make_cache().await;
 
         domo_cache
@@ -798,7 +794,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_write_twice_same_key()  {
+    async fn test_write_twice_same_key() {
         let mut domo_cache = make_cache().await;
 
         domo_cache
