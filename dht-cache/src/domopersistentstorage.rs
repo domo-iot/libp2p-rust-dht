@@ -1,4 +1,8 @@
 use crate::domocache::DomoCacheElement;
+use sea_query::{
+    Alias, ColumnDef, Iden, Index, PostgresQueryBuilder, Query, SqliteQueryBuilder, Table,
+};
+use sea_query_binder::SqlxBinder;
 use sqlx::{
     any::{AnyConnectOptions, AnyKind, AnyRow},
     postgres::PgConnectOptions,
@@ -16,40 +20,65 @@ pub trait DomoPersistentStorage {
 
 pub struct SqlxStorage {
     pub(crate) connection: AnyConnection,
-    pub(crate) db_table: String
+    pub(crate) db_table: Alias,
+}
 
+#[derive(Iden)]
+enum Id {
+    TopicName,
+    TopicUuid,
+    Value,
+    Deleted,
+    PublicationTimestamp,
+    PublisherPeerId,
 }
 
 impl SqlxStorage {
     async fn with_connection(mut conn: AnyConnection, db_table: &str, write_access: bool) -> Self {
+        let db_table = Alias::new(db_table);
+        let mut table = Table::create();
+        let sql = table
+            .table(db_table.clone())
+            .if_not_exists()
+            .col(ColumnDef::new(Id::TopicName).text().not_null())
+            .col(ColumnDef::new(Id::TopicUuid).text().not_null())
+            .col(ColumnDef::new(Id::Value).text())
+            .col(ColumnDef::new(Id::Deleted).integer())
+            .col(ColumnDef::new(Id::PublicationTimestamp).text().not_null())
+            .col(ColumnDef::new(Id::PublisherPeerId).text().not_null())
+            .primary_key(Index::create().col(Id::TopicName).col(Id::TopicUuid));
 
-        let create_table_command = "CREATE TABLE IF NOT EXISTS ".to_owned() + db_table
-            + " (
-            topic_name             TEXT,
-            topic_uuid             TEXT,
-            value                  TEXT,
-            deleted                INTEGER,
-            publication_timestamp   TEXT,
-            publisher_peer_id       TEXT,
-            PRIMARY KEY (topic_name, topic_uuid)
-        )";
+        let sql = match conn.kind() {
+            AnyKind::Sqlite => sql.build(SqliteQueryBuilder),
+            AnyKind::Postgres => sql.build(PostgresQueryBuilder),
+        };
 
+        /*
+                let create_table_command = "CREATE TABLE IF NOT EXISTS ".to_owned() + db_table
+                    + " (
+                    topic_name             TEXT,
+                    topic_uuid             TEXT,
+                    value                  TEXT,
+                    deleted                INTEGER,
+                    publication_timestamp   TEXT,
+                    publisher_peer_id       TEXT,
+                    PRIMARY KEY (topic_name, topic_uuid)
+                )";
+        */
         if write_access {
-            _ = conn
-                .execute(
-                    create_table_command.as_str()
-                )
-                .await
-                .unwrap();
+            _ = conn.execute(sql.as_str()).await.unwrap();
         }
 
-        Self { connection: conn, db_table: db_table.to_string() }
+        Self {
+            connection: conn,
+            db_table,
+        }
     }
 
     pub async fn new_in_memory(db_table: &str) -> Self {
         let conn = SqliteConnection::connect("sqlite::memory:").await.unwrap();
 
-        Self::with_connection(conn.into(), db_table,true).await
+        Self::with_connection(conn.into(), db_table, true).await
     }
 
     // TODO: reconsider write_access
@@ -68,10 +97,13 @@ impl SqlxStorage {
                     "default_transaction_read_only",
                     if write_access { "off" } else { "on" },
                 )])
-                .into()
+                .into(),
         };
 
-        let conn = opts.connect().await.expect("Cannot perform connection to the DB");
+        let conn = opts
+            .connect()
+            .await
+            .expect("Cannot perform connection to the DB");
 
         Self::with_connection(conn, db_table, write_access).await
     }
@@ -80,37 +112,53 @@ impl SqlxStorage {
 #[async_trait::async_trait]
 impl DomoPersistentStorage for SqlxStorage {
     async fn store(&mut self, element: &DomoCacheElement) {
-
-        let command: String = if self.connection.kind() == AnyKind::Sqlite {
-            "INSERT OR REPLACE INTO ".to_owned() + &self.db_table + " (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
-              VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
-        } else if self.connection.kind() == AnyKind::Postgres {
-             "INSERT INTO ".to_owned()
-                + &self.db_table
-                + "
-             (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
-              VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT(topic_name, topic_uuid) DO UPDATE SET \
-              value = $3, deleted = $4, publication_timestamp = $5, publisher_peer_id = $6"
-        } else {
-            String::from("")
+        let mut insert = Query::insert();
+        let sql = insert
+            .replace()
+            .into_table(self.db_table.clone())
+            .columns([
+                Id::TopicName,
+                Id::TopicUuid,
+                Id::Value,
+                Id::Deleted,
+                Id::PublicationTimestamp,
+                Id::PublisherPeerId,
+            ])
+            .values_panic([
+                element.topic_name.to_string().into(),
+                element.topic_uuid.to_string().into(),
+                element.value.to_string().into(),
+                i32::from(element.deleted).into(),
+                element.publication_timestamp.to_string().into(),
+                element.publisher_peer_id.to_string().into(),
+            ]);
+        let (sql, values) = match self.connection.kind() {
+            AnyKind::Sqlite => sql.build_sqlx(SqliteQueryBuilder),
+            AnyKind::Postgres => sql.build_sqlx(PostgresQueryBuilder),
         };
-
-        sqlx::query(
-            &command,
-        )
-        .bind(&element.topic_name)
-        .bind(&element.topic_uuid)
-        .bind(&element.value.to_string())
-        .bind(&i32::from(element.deleted))
-        .bind(&element.publication_timestamp.to_string())
-        .bind(&element.publisher_peer_id)
-        .execute(&mut self.connection)
-        .await
-        .expect("database error");
+        /*
+                let command: String = if self.connection.kind() == AnyKind::Sqlite {
+                    "INSERT OR REPLACE INTO ".to_owned() + &self.db_table + " (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
+                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)"
+                } else if self.connection.kind() == AnyKind::Postgres {
+                    "INSERT INTO ".to_owned()
+                        + &self.db_table
+                        + "
+                     (topic_name, topic_uuid, value, deleted, publication_timestamp, publisher_peer_id)\
+                      VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT(topic_name, topic_uuid) DO UPDATE SET \
+                      value = $3, deleted = $4, publication_timestamp = $5, publisher_peer_id = $6"
+                } else {
+                    String::from("")
+                };
+        */
+        sqlx::query_with(&sql, values)
+            .execute(&mut self.connection)
+            .await
+            .expect("database error");
     }
 
     async fn get_all_elements(&mut self) -> Vec<DomoCacheElement> {
-        let command = "SELECT * FROM ".to_owned() + &self.db_table;
+        let command = format!("SELECT * FROM {}", self.db_table.to_string());
         sqlx::query(&command)
             .try_map(|row: AnyRow| {
                 let jvalue = row.get(2);
@@ -152,9 +200,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_pgsql_db_connection() {
-        let _s = super::SqlxStorage::new("postgres://postgres:mysecretpassword@localhost/postgres", "domo_test_pgsql_connection", true).await;
+        let _s = super::SqlxStorage::new(
+            "postgres://postgres:mysecretpassword@localhost/postgres",
+            "domo_test_pgsql_connection",
+            true,
+        )
+        .await;
     }
-
 
     #[tokio::test]
     async fn test_initial_get_all_elements() {
@@ -164,10 +216,14 @@ mod tests {
         let v = s.get_all_elements().await;
         assert_eq!(v.len(), 0);
 
-        let mut s = super::SqlxStorage::new("postgres://postgres:mysecretpassword@localhost/postgres", "test_initial_get_all_elements", true).await;
+        let mut s = super::SqlxStorage::new(
+            "postgres://postgres:mysecretpassword@localhost/postgres",
+            "test_initial_get_all_elements",
+            true,
+        )
+        .await;
         let v = s.get_all_elements().await;
         assert_eq!(v.len(), 0);
-
     }
 
     #[tokio::test]
@@ -192,7 +248,12 @@ mod tests {
         assert_eq!(v.len(), 1);
         assert_eq!(v[0], m);
 
-        let mut s = super::SqlxStorage::new("postgres://postgres:mysecretpassword@localhost/postgres", "test_store", true).await;
+        let mut s = super::SqlxStorage::new(
+            "postgres://postgres:mysecretpassword@localhost/postgres",
+            "test_store",
+            true,
+        )
+        .await;
 
         s.store(&m).await;
 
@@ -200,6 +261,5 @@ mod tests {
 
         assert_eq!(v.len(), 1);
         assert_eq!(v[0], m);
-
     }
 }
