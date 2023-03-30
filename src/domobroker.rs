@@ -16,13 +16,13 @@ pub struct DomoBroker {
 }
 
 pub struct DomoBrokerConf {
-    pub db_url: String, // db layer
-    pub db_table: String, // db layer
-    pub is_persistent_cache: bool, // dht layer and db layer
+    pub db_url: String,                   // db layer
+    pub db_table: String,                 // db layer
+    pub is_persistent_cache: bool,        // dht layer and db layer
     pub private_key_file: Option<String>, // dht layer
-    pub shared_key: String, // dht layer
-    pub loopback_only: bool, // dht layer
-    pub http_port: u16, // broker layer
+    pub shared_key: String,               // dht layer
+    pub loopback_only: bool,              // dht layer
+    pub http_port: u16,                   // broker layer
 }
 
 impl Into<DomoCacheConfig> for DomoBrokerConf {
@@ -33,20 +33,18 @@ impl Into<DomoCacheConfig> for DomoBrokerConf {
             is_persistent_cache: self.is_persistent_cache,
             private_key_file: self.private_key_file.clone(),
             shared_key: self.shared_key.clone(),
-            loopback_only: self.loopback_only
+            loopback_only: self.loopback_only,
         }
     }
 }
 
 impl DomoBroker {
     pub async fn new(conf: DomoBrokerConf) -> Result<Self, Box<dyn Error>> {
-
         let http_port = conf.http_port;
 
         let domo_cache_conf: DomoCacheConfig = conf.into();
 
-        let domo_cache = DomoCache::new(domo_cache_conf)
-        .await?;
+        let domo_cache = DomoCache::new(domo_cache_conf).await?;
 
         let web_manager = WebApiManager::new(http_port);
 
@@ -278,7 +276,6 @@ impl DomoBroker {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
