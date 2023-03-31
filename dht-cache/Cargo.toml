@@ -3,7 +3,9 @@ name = "sifis-dht"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+vendored = ["openssl-sys/vendored", "libsqlite3-sys/bundled"]
 
 [dependencies]
 async-trait = "0.1.68"
@@ -24,3 +26,9 @@ url = "2.2.2"
 rsa = "0.8"
 pem-rfc7468 = { version = "0.7", features = ["alloc"] }
 sifis-config = { path = "../dht-config" }
+openssl-sys = "*"
+libsqlite3-sys = "*"
+
+
+[package.metadata.cargo-udeps.ignore]
+normal = ["openssl-sys", "libsqlite3-sys"]
