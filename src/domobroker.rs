@@ -8,43 +8,17 @@ use crate::websocketmessage::{
 };
 
 use serde_json::json;
-use sifis_dht::domocache::DomoCacheConfig;
 
 pub struct DomoBroker {
     pub domo_cache: DomoCache,
     pub web_manager: WebApiManager,
 }
 
-pub struct DomoBrokerConf {
-    pub db_url: String,                   // db layer
-    pub db_table: String,                 // db layer
-    pub is_persistent_cache: bool,        // dht layer and db layer
-    pub private_key_file: Option<String>, // dht layer
-    pub shared_key: String,               // dht layer
-    pub loopback_only: bool,              // dht layer
-    pub http_port: u16,                   // broker layer
-}
-
-impl Into<DomoCacheConfig> for DomoBrokerConf {
-    fn into(self) -> DomoCacheConfig {
-        DomoCacheConfig {
-            db_url: self.db_url.clone(),
-            db_table: self.db_table.clone(),
-            is_persistent_cache: self.is_persistent_cache,
-            private_key_file: self.private_key_file.clone(),
-            shared_key: self.shared_key.clone(),
-            loopback_only: self.loopback_only,
-        }
-    }
-}
-
 impl DomoBroker {
-    pub async fn new(conf: DomoBrokerConf) -> Result<Self, Box<dyn Error>> {
-        let http_port = conf.http_port;
+    pub async fn new(conf: sifis_config::Broker) -> Result<Self, Box<dyn Error>> {
+        let sifis_config::Broker { http_port, cache } = conf;
 
-        let domo_cache_conf: DomoCacheConfig = conf.into();
-
-        let domo_cache = DomoCache::new(domo_cache_conf).await?;
+        let domo_cache = DomoCache::new(cache).await?;
 
         let web_manager = WebApiManager::new(http_port);
 
@@ -283,16 +257,18 @@ mod tests {
     use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
 
     async fn setup_broker(http_port: u16) -> DomoBroker {
-        let domo_broker_conf = super::DomoBrokerConf {
-            db_url: "sqlite::memory:".to_string(),
-            db_table: "domo_data".to_string(),
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            private_key_file: None,
+        let domo_broker_conf = sifis_config::Broker {
+            cache: sifis_config::Cache {
+                url: "sqlite::memory:".to_string(),
+                table: "domo_data".to_string(),
+                persistent: true,
+                shared_key: String::from(
+                    "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+                ),
+                private_key: None,
+                loopback: false,
+            },
             http_port,
-            loopback_only: false,
         };
 
         super::DomoBroker::new(domo_broker_conf).await.unwrap()

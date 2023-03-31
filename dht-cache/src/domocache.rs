@@ -1,4 +1,4 @@
-use crate::domopersistentstorage::{DomoDataBaseConfig, DomoPersistentStorage, SqlxStorage};
+use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use crate::utils;
 use futures::prelude::*;
 use libp2p::gossipsub::IdentTopic as Topic;
@@ -31,25 +31,6 @@ fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
         .to_vec();
     let der = private_key.to_pkcs8_der().unwrap().as_bytes().to_vec();
     (pem, der)
-}
-
-pub struct DomoCacheConfig {
-    pub db_url: String,                   // db layer
-    pub db_table: String,                 // db layer
-    pub is_persistent_cache: bool,        // dht layer and db layer
-    pub private_key_file: Option<String>, // dht layer
-    pub shared_key: String,               // dht layer
-    pub loopback_only: bool,              // dht layer
-}
-
-impl DomoCacheConfig {
-    pub fn extract_domo_database_conf(&self) -> DomoDataBaseConfig {
-        DomoDataBaseConfig {
-            db_url: self.db_url.clone(),
-            db_table: self.db_table.clone(),
-            is_persistent_cache: self.is_persistent_cache,
-        }
-    }
 }
 
 // possible events returned by cache_loop_event()
@@ -99,7 +80,7 @@ impl Display for DomoCacheElement {
 }
 
 pub struct DomoCache {
-    pub storage: SqlxStorage,
+    storage: SqlxStorage,
     pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
     pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub publish_cache_counter: u8,
@@ -466,18 +447,17 @@ impl DomoCache {
         }
     }
 
-    pub async fn new(conf: DomoCacheConfig) -> Result<Self, Box<dyn Error>> {
-        if conf.db_url.is_empty() {
+    pub async fn new(conf: sifis_config::Cache) -> Result<Self, Box<dyn Error>> {
+        if conf.url.is_empty() {
             panic!("db_url needed");
         }
 
-        let is_persistent_cache = conf.is_persistent_cache;
-        let loopback_only = conf.loopback_only;
+        let is_persistent_cache = conf.persistent;
+        let loopback_only = conf.loopback;
         let shared_key = conf.shared_key.clone();
-        let private_key_file = conf.private_key_file.clone();
+        let private_key_file = conf.private_key.clone();
 
-        let db_conf = DomoDataBaseConfig::from(conf);
-        let storage = SqlxStorage::new(&db_conf).await;
+        let storage = SqlxStorage::new(&conf).await;
 
         // Create a random local key.
         let mut pkcs8_der = if let Some(pk_path) = private_key_file {
@@ -730,18 +710,15 @@ impl DomoCache {
 
 #[cfg(test)]
 mod tests {
-
-    use crate::domocache::DomoCacheConfig;
-
     async fn make_cache() -> super::DomoCache {
-        let conf = DomoCacheConfig {
-            db_url: "sqlite::memory:".to_string(),
-            db_table: "domo_data".to_string(),
-            is_persistent_cache: true,
-            private_key_file: Some("/tmp/test_key.pem".to_string()),
+        let conf = sifis_config::Cache {
+            url: "sqlite::memory:".to_string(),
+            table: "domo_data".to_string(),
+            persistent: true,
+            private_key: Some("/tmp/test_key.pem".into()),
             shared_key: "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9"
                 .to_string(),
-            loopback_only: false,
+            loopback: false,
         };
 
         if let Ok(cache) = super::DomoCache::new(conf).await {
