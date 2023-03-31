@@ -28,7 +28,8 @@ pub struct Cache {
     /// Path to the private key file of the broker. If the path does not exist a key file
     /// will be automatically generated
     #[arg(long, short = 'k', value_hint = clap::ValueHint::FilePath)]
-    private_key: PathBuf,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    private_key: Option<PathBuf>,
 
     /// 32 bytes long shared key in hex format
     /// used to protect access to the DHT
