@@ -6,47 +6,15 @@ use std::error::Error;
 use tokio::io::{self, AsyncBufReadExt};
 
 use clap::Parser;
+use serde::{Deserialize, Serialize};
+use sifis_config::Broker;
 use sifis_dht::domocache::DomoEvent;
-use sifis_dht_broker::domobroker::{DomoBroker, DomoBrokerConf};
+use sifis_dht_broker::domobroker::DomoBroker;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Serialize, Deserialize)]
 struct Opt {
-    /// Database URL in sqlx format
-    ///
-    /// - "sqlite::memory:"
-    ///
-    /// - "sqlite://aaskdjkasdka.sqlite"
-    ///
-    /// - "postgres://postgres:mysecretpassword@localhost/postgres"
-    #[clap(parse(try_from_str))]
-    db_url: String,
-
-    /// Name of the table that will be used to store the dht messages
-    #[clap(parse(try_from_str))]
-    db_table: String,
-
-    /// Indicates if the broker should persist the DHT messages into the DB
-    /// or if the DB will only be used to populate the DHT cache when the broker starts
-    #[clap(parse(try_from_str))]
-    is_persistent_cache: bool,
-
-    /// Path to the private key file of the broker. If the path does not exist a key file
-    /// will be automatically generated
-    #[clap(parse(try_from_str))]
-    private_key_file: String,
-
-    /// 32 bytes long shared key in hex format
-    /// used to protect access to the DHT
-    #[clap(parse(try_from_str))]
-    shared_key: String,
-
-    /// Use only loopback iface for libp2p
-    #[clap(parse(try_from_str))]
-    loopback_only: bool,
-
-    /// HTTP port used by the broker
-    #[clap(parse(try_from_str))]
-    http_port: u16,
+    #[clap(flatten)]
+    broker: Broker,
 }
 
 #[tokio::main]
@@ -57,32 +25,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     log::info!("Program started at {:?}", local);
 
-    let Opt {
-        db_url,
-        db_table,
-        private_key_file,
-        is_persistent_cache,
-        shared_key,
-        http_port,
-        loopback_only,
-    } = opt;
-
     env_logger::init();
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
     let debug_console = std::env::var("DHT_DEBUG_CONSOLE").is_ok();
 
-    let domo_broker_conf = DomoBrokerConf {
-        db_url,
-        db_table,
-        private_key_file: Some(private_key_file),
-        is_persistent_cache,
-        shared_key,
-        http_port,
-        loopback_only,
-    };
-
-    let mut domo_broker = DomoBroker::new(domo_broker_conf).await?;
+    let mut domo_broker = DomoBroker::new(opt.broker).await?;
 
     if debug_console {
         loop {

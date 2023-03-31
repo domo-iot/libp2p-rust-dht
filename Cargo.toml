@@ -10,7 +10,7 @@ vendored = ["reqwest/native-tls-vendored"]
 
 [dependencies]
 axum = { version = "0.5.6", features = ["ws"] }
-clap = { version = "3.1.18", features = ["derive"] }
+clap = { version = "4.1.1", features = ["derive"] }
 env_logger = "0.9.0"
 futures = "0.3.21"
 futures-util = "0.3.21"
@@ -20,6 +20,7 @@ rand = "0.8"
 serde = "1.0.137"
 serde_json = "1.0"
 sifis-dht = { path = "./dht-cache" }
+sifis-config = { path = "./dht-config" }
 time = "0.3.17"
 tokio = { version = "1.19.0", features = ["full"] }
 tokio-tungstenite = "0.17.1"

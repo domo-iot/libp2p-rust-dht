@@ -23,4 +23,4 @@ tokio = { version = "1.19.0", features = ["full"] }
 url = "2.2.2"
 rsa = "0.8"
 pem-rfc7468 = { version = "0.7", features = ["alloc"] }
-
+sifis-config = { path = "../dht-config" }
