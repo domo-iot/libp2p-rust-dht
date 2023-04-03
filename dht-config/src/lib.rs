@@ -1,8 +1,8 @@
 //! Configuration setup
 //!
-use clap::Parser;
+use clap::{Arg, CommandFactory, FromArgMatches, Parser, ValueHint};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::{marker::PhantomData, path::Path, path::PathBuf};
 
 #[derive(Parser, Debug, Deserialize, Serialize)]
 pub struct Cache {
@@ -62,4 +62,42 @@ pub struct Broker {
     /// HTTP port used by the broker
     #[arg(long, short = 'H', default_value = "8080")]
     pub http_port: u16,
+}
+
+/// Create a configuration parser and a cli for the provided
+/// struct T
+pub struct ConfigBuilder<T> {
+    default_path: PathBuf,
+    _t: PhantomData<T>,
+}
+
+impl<T> ConfigBuilder<T>
+where
+    T: Parser + std::fmt::Debug + Serialize,
+    for<'a> T: Deserialize<'a>,
+{
+    pub fn with_config_path<P: AsRef<Path>>(path: P) -> Self {
+        Self {
+            default_path: path.as_ref().to_owned(),
+            _t: PhantomData,
+        }
+    }
+    pub fn parse(&self) -> T {
+        let cmd = <T as CommandFactory>::command();
+        let mut matches = cmd
+            .arg(
+                Arg::new("config")
+                    .short('c')
+                    .long("config")
+                    .value_parser(clap::value_parser!(PathBuf))
+                    .default_value(self.default_path.as_os_str().to_os_string())
+                    .value_hint(ValueHint::FilePath)
+                    .value_name("FILE"),
+            )
+            .get_matches();
+        // SAFETY: config has a default value
+        let config = matches.remove_one::<PathBuf>("config").unwrap();
+        dbg!(config);
+        <T as FromArgMatches>::from_arg_matches(&matches).expect("Internal error parsing matches")
+    }
 }

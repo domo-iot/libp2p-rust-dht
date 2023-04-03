@@ -1,6 +1,6 @@
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use sifis_config::Broker;
+use sifis_config::{Broker, ConfigBuilder};
 
 #[derive(Parser, Debug, Deserialize, Serialize)]
 struct Cli {
@@ -9,7 +9,7 @@ struct Cli {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    let cli = ConfigBuilder::<Cli>::with_config_path("/etc/config").parse();
 
     let s = toml::to_string_pretty(&cli).unwrap();
 
