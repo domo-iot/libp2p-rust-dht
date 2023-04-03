@@ -1,7 +1,10 @@
 //! Configuration setup
 //!
 use clap::{Arg, CommandFactory, FromArgMatches, Parser, ValueHint};
+use figment::providers::{Env, Format, Toml};
+use figment::{value::Value, Figment};
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::{marker::PhantomData, path::Path, path::PathBuf};
 
 #[derive(Parser, Debug, Deserialize, Serialize)]
@@ -66,38 +69,114 @@ pub struct Broker {
 
 /// Create a configuration parser and a cli for the provided
 /// struct T
-pub struct ConfigBuilder<T> {
-    default_path: PathBuf,
+#[derive(Default)]
+pub struct ConfigParser<T> {
+    default_path: Option<PathBuf>,
+    prefix: Option<String>,
     _t: PhantomData<T>,
 }
 
-impl<T> ConfigBuilder<T>
+impl<T> ConfigParser<T>
 where
     T: Parser + std::fmt::Debug + Serialize,
     for<'a> T: Deserialize<'a>,
 {
-    pub fn with_config_path<P: AsRef<Path>>(path: P) -> Self {
+    /// Create a new default parser
+    pub fn new() -> Self {
         Self {
-            default_path: path.as_ref().to_owned(),
+            default_path: None,
+            prefix: None,
             _t: PhantomData,
         }
     }
+    /// Set a custom config file path
+    ///
+    /// By default uses the result of [Command::get_name] with the extension `.toml`.
+    pub fn with_config_path<P: AsRef<Path>>(mut self, path: P) -> Self {
+        self.default_path = Some(path.as_ref().to_owned());
+        self
+    }
+
+    /// Set a custom prefix for the env variable lookup
+    ///
+    /// By default uses the result of [Command::get_name] with `_`.
+    pub fn with_env_prefix<S: ToString>(mut self, prefix: S) -> Self {
+        self.prefix = Some(prefix.to_string());
+        self
+    }
+
+    /// Parse the configuration
+    ///
+    /// It looks into the environment, a configuration file and the command line arguments.
     pub fn parse(&self) -> T {
-        let cmd = <T as CommandFactory>::command();
+        let cmd = <T as CommandFactory>::command_for_update();
+        let name = cmd.get_name();
+
+        let default_path = self
+            .default_path
+            .as_ref()
+            .map(|p| p.as_os_str().to_os_string())
+            .unwrap_or_else(|| OsString::from(format!("{name}.toml")));
+
+        let prefix = self.prefix.as_ref().cloned().unwrap_or_else(|| {
+            let mut p = name.to_uppercase().replace('-', "_");
+            p.push('_');
+            p
+        });
         let mut matches = cmd
             .arg(
                 Arg::new("config")
                     .short('c')
                     .long("config")
                     .value_parser(clap::value_parser!(PathBuf))
-                    .default_value(self.default_path.as_os_str().to_os_string())
+                    .default_value(default_path)
                     .value_hint(ValueHint::FilePath)
                     .value_name("FILE"),
             )
             .get_matches();
+
         // SAFETY: config has a default value
         let config = matches.remove_one::<PathBuf>("config").unwrap();
-        dbg!(config);
+
+        let values = Figment::new()
+            .merge(Env::prefixed(&prefix))
+            .merge(Toml::file(config))
+            .extract::<Value>()
+            .unwrap();
+
+        fn find_deep<'a>(value: &'a Value, key: &str) -> Option<&'a Value> {
+            match value {
+                Value::Dict(_, d) => d
+                    .get(key)
+                    .or_else(|| d.values().find_map(|v| find_deep(v, key))),
+                _ => None,
+            }
+        }
+
+        let mut cmd = <T as CommandFactory>::command();
+
+        let keys = cmd
+            .get_arguments()
+            .map(|arg| arg.get_id().to_owned())
+            .collect::<Vec<_>>();
+
+        for (key, value) in keys
+            .into_iter()
+            .filter_map(|key| find_deep(&values, key.as_str()).map(|v| (key, v)))
+        {
+            match value {
+                Value::String(..) | Value::Bool(..) | Value::Char(..) | Value::Num(..) => {
+                    let val = serde_json::to_string(value).unwrap();
+                    cmd = cmd.mut_arg(key, |a| a.default_value(val).required(false))
+                }
+                _ => {
+                    todo!("More value types")
+                }
+            }
+        }
+
+        let matches = cmd.get_matches();
+
         <T as FromArgMatches>::from_arg_matches(&matches).expect("Internal error parsing matches")
     }
 }
