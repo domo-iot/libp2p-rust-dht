@@ -7,7 +7,7 @@ use tokio::io::{self, AsyncBufReadExt};
 
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use sifis_config::Broker;
+use sifis_config::{Broker, ConfigParser};
 use sifis_dht::domocache::DomoEvent;
 use sifis_dht_broker::domobroker::DomoBroker;
 
@@ -19,7 +19,9 @@ struct Opt {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let opt = Opt::parse();
+    let opt = ConfigParser::<Opt>::new()
+        .with_config_path("/etc/domo/broker.toml")
+        .parse();
 
     let local = OffsetDateTime::now_utc();
 
