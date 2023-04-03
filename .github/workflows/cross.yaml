@@ -2,7 +2,7 @@ name: cross
 
 on:
   push:
-    branches: [ "master"]
+    branches: [ "master", "sqlx"]
     tags:
       - 'v*.*.*'
 
