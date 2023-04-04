@@ -63,7 +63,7 @@ pub struct Broker {
     pub cache: Cache,
 
     /// HTTP port used by the broker
-    #[arg(long, short = 'H', default_value = "8080")]
+    #[arg(long, short = 'H', default_value = "3000")]
     pub http_port: u16,
 }
 
