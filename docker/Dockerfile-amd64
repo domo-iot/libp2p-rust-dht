@@ -1,3 +1,3 @@
 FROM amd64/alpine
 ADD sifis-dht-broker /
-ENTRYPOINT ["/sifis-dht-broker", "-u",  "sqlite://root/sifis-db.sqlite", "-t",  "domo_data", "-p", "-k", "/root/private.pem", "-s", "812d9bcc6e31e990d4ee888af0dba1c11c56be4959606c8a913a3db5d93c7a2c", "-H", "3000"]
+ENTRYPOINT ["/sifis-dht-broker"]
