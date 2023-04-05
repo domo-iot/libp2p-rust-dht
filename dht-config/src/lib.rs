@@ -2,6 +2,7 @@
 //!
 use clap::{Arg, CommandFactory, FromArgMatches, Parser, ValueHint};
 use figment::providers::{Env, Format, Toml};
+use figment::value::Num;
 use figment::{value::Value, Figment};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
@@ -164,15 +165,31 @@ where
             .into_iter()
             .filter_map(|key| find_deep(&values, key.as_str()).map(|v| (key, v)))
         {
-            match value {
-                Value::String(..) | Value::Bool(..) | Value::Char(..) | Value::Num(..) => {
-                    let val = serde_json::to_string(value).unwrap();
-                    cmd = cmd.mut_arg(key, |a| a.default_value(val).required(false))
-                }
+            let val = match value {
+                Value::String(_, s) => s.to_owned(),
+                Value::Bool(_, b) => b.to_string(),
+                Value::Char(_, c) => c.to_string(),
+                Value::Num(_, n) => match n {
+                    Num::F32(f) => f.to_string(),
+                    Num::F64(d) => d.to_string(),
+                    Num::U8(n) => n.to_string(),
+                    Num::I8(n) => n.to_string(),
+                    Num::U16(n) => n.to_string(),
+                    Num::I16(n) => n.to_string(),
+                    Num::U32(n) => n.to_string(),
+                    Num::I32(n) => n.to_string(),
+                    Num::U64(n) => n.to_string(),
+                    Num::I64(n) => n.to_string(),
+                    Num::U128(n) => n.to_string(),
+                    Num::I128(n) => n.to_string(),
+                    Num::USize(n) => n.to_string(),
+                    Num::ISize(n) => n.to_string(),
+                },
                 _ => {
                     todo!("More value types")
                 }
-            }
+            };
+            cmd = cmd.mut_arg(key, |a| a.default_value(val).required(false))
         }
 
         let matches = cmd.get_matches();
