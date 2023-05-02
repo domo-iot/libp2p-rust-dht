@@ -32,8 +32,9 @@ impl DomoBroker {
         loop {
             tokio::select! {
                 webs_message = self.web_manager.sync_rx_websocket.recv() => {
-                    let message = webs_message.unwrap();
-                    self.handle_websocket_sync_request(message).await;
+                    if let Ok(message) = webs_message {
+                        self.handle_websocket_sync_request(message).await;
+                    }
                 },
 
                 Some(rest_message) = self.web_manager.rx_rest.recv() => {
