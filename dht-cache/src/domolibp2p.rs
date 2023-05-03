@@ -128,7 +128,6 @@ pub async fn start(
         // subscribes to config topic
         gossipsub.subscribe(&topic_config).unwrap();
 
-
         let behaviour = DomoBehaviour { mdns, gossipsub };
         //Swarm::new(transport, behaviour, local_peer_id)
 
