@@ -589,7 +589,6 @@ impl DomoCache {
     }
 
     pub async fn delete_value(&mut self, topic_name: &str, topic_uuid: &str) {
-
         let mut value_to_set = serde_json::Value::Null;
 
         if let Some(old_value) = self.read_cache_element(topic_name, topic_uuid) {
