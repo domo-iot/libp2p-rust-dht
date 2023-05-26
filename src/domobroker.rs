@@ -1,72 +1,26 @@
 use std::error::Error;
-use std::io::ErrorKind;
 
 use crate::domocache::{DomoCache, DomoEvent};
-use crate::domopersistentstorage::SqliteStorage;
 use crate::restmessage;
 use crate::webapimanager::WebApiManager;
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
-use libp2p::identity;
-use rsa::pkcs8::EncodePrivateKey;
-use rsa::RsaPrivateKey;
+
 use serde_json::json;
 
 pub struct DomoBroker {
-    pub domo_cache: DomoCache<SqliteStorage>,
+    pub domo_cache: DomoCache,
     pub web_manager: WebApiManager,
 }
 
-pub struct DomoBrokerConf {
-    pub sqlite_file: String,
-    pub private_key_file: Option<String>,
-    pub is_persistent_cache: bool,
-    pub shared_key: String,
-    pub http_port: u16,
-    pub loopback_only: bool,
-}
-
 impl DomoBroker {
-    pub async fn new(conf: DomoBrokerConf) -> Result<Self, String> {
-        if conf.sqlite_file.is_empty() {
-            return Err(String::from("sqlite_file path needed"));
-        }
+    pub async fn new(conf: sifis_config::Broker) -> Result<Self, Box<dyn Error>> {
+        let sifis_config::Broker { http_port, cache } = conf;
 
-        let storage = SqliteStorage::new(conf.sqlite_file, conf.is_persistent_cache);
+        let domo_cache = DomoCache::new(cache).await?;
 
-        // Create a random local key.
-        let mut pkcs8_der = if let Some(pk_path) = conf.private_key_file {
-            match std::fs::read(&pk_path) {
-                Ok(pem) => {
-                    let der = pem_rfc7468::decode_vec(&pem)
-                        .map_err(|e| format!("Couldn't decode pem: {e:?}"))?;
-                    der.1
-                }
-                Err(e) if e.kind() == ErrorKind::NotFound => {
-                    // Generate a new key and put it into the file at the given path
-                    let (pem, der) = generate_rsa_key();
-                    std::fs::write(pk_path, pem).expect("Couldn't save ");
-                    der
-                }
-                Err(e) => Err(format!("Couldn't load key file: {e:?}"))?,
-            }
-        } else {
-            generate_rsa_key().1
-        };
-        let local_key = identity::Keypair::rsa_from_pkcs8(&mut pkcs8_der)
-            .map_err(|e| format!("Couldn't load key: {e:?}"))?;
-
-        let domo_cache = DomoCache::new(
-            conf.is_persistent_cache,
-            storage,
-            conf.shared_key,
-            local_key,
-            conf.loopback_only,
-        )
-        .await;
-
-        let web_manager = WebApiManager::new(conf.http_port);
+        let web_manager = WebApiManager::new(http_port);
 
         Ok(DomoBroker {
             domo_cache,
@@ -78,8 +32,9 @@ impl DomoBroker {
         loop {
             tokio::select! {
                 webs_message = self.web_manager.sync_rx_websocket.recv() => {
-                    let message = webs_message.unwrap();
-                    self.handle_websocket_sync_request(message).await;
+                    if let Ok(message) = webs_message {
+                        self.handle_websocket_sync_request(message).await;
+                    }
                 },
 
                 Some(rest_message) = self.web_manager.rx_rest.recv() => {
@@ -297,35 +252,24 @@ impl DomoBroker {
     }
 }
 
-fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
-    let mut rng = rand::thread_rng();
-    let bits = 2048;
-    let private_key = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-    let pem = private_key
-        .to_pkcs8_pem(Default::default())
-        .unwrap()
-        .as_bytes()
-        .to_vec();
-    let der = private_key.to_pkcs8_der().unwrap().as_ref().to_vec();
-    (pem, der)
-}
-
 #[cfg(test)]
 mod tests {
     use crate::domobroker::DomoBroker;
     use crate::websocketmessage::{AsyncWebSocketDomoMessage, SyncWebSocketDomoRequest};
 
     async fn setup_broker(http_port: u16) -> DomoBroker {
-        let sqlite_file = crate::domopersistentstorage::SQLITE_MEMORY_STORAGE.to_owned();
-        let domo_broker_conf = super::DomoBrokerConf {
-            sqlite_file,
-            is_persistent_cache: true,
-            shared_key: String::from(
-                "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
-            ),
-            private_key_file: None,
+        let domo_broker_conf = sifis_config::Broker {
+            cache: sifis_config::Cache {
+                url: "sqlite::memory:".to_string(),
+                table: "domo_data".to_string(),
+                persistent: true,
+                shared_key: String::from(
+                    "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9",
+                ),
+                private_key: None,
+                loopback: false,
+            },
             http_port,
-            loopback_only: false,
         };
 
         super::DomoBroker::new(domo_broker_conf).await.unwrap()
@@ -1214,7 +1158,7 @@ mod tests {
                 let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
                     topic_name: "Domo::Light".to_owned(),
                     topic_uuid: "uno".to_owned(),
-                    value: serde_json::Value::Null,
+                    value: serde_json::json!({"connected": true}),
                     deleted: true,
                 })
                 .unwrap();

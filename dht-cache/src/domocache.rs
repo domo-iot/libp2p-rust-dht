@@ -1,10 +1,12 @@
-use crate::domopersistentstorage::DomoPersistentStorage;
+use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use crate::utils;
 use futures::prelude::*;
 use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::identity::Keypair;
 use libp2p::mdns;
 use libp2p::swarm::SwarmEvent;
+use rsa::pkcs8::EncodePrivateKey;
+use rsa::RsaPrivateKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
@@ -12,10 +14,24 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::io::ErrorKind;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
+
+fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
+    let mut rng = rand::thread_rng();
+    let bits = 2048;
+    let private_key = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
+    let pem = private_key
+        .to_pkcs8_pem(Default::default())
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let der = private_key.to_pkcs8_der().unwrap().as_bytes().to_vec();
+    (pem, der)
+}
 
 // possible events returned by cache_loop_event()
 #[derive(Debug)]
@@ -63,8 +79,8 @@ impl Display for DomoCacheElement {
     }
 }
 
-pub struct DomoCache<T: DomoPersistentStorage> {
-    pub storage: T,
+pub struct DomoCache {
+    storage: SqlxStorage,
     pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
     pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub publish_cache_counter: u8,
@@ -77,7 +93,7 @@ pub struct DomoCache<T: DomoPersistentStorage> {
     send_cache_state_timer: tokio::time::Instant,
 }
 
-impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
+impl Hash for DomoCache {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for (topic_name, map_topic_name) in self.cache.iter() {
             topic_name.hash(state);
@@ -90,7 +106,7 @@ impl<T: DomoPersistentStorage> Hash for DomoCache<T> {
     }
 }
 
-impl<T: DomoPersistentStorage> DomoCache<T> {
+impl DomoCache {
     #[allow(unused)]
     pub fn filter_with_topic_name(
         &self,
@@ -383,7 +399,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
                         println!("Listening in {address:?}");
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Gossipsub(
-                        libp2p::gossipsub::GossipsubEvent::Message {
+                        libp2p::gossipsub::Event::Message {
                             propagation_source: _peer_id,
                             message_id: _id,
                             message,
@@ -431,13 +447,41 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         }
     }
 
-    pub async fn new(
-        is_persistent_cache: bool,
-        storage: T,
-        shared_key: String,
-        local_key_pair: Keypair,
-        loopback_only: bool,
-    ) -> Self {
+    pub async fn new(conf: sifis_config::Cache) -> Result<Self, Box<dyn Error>> {
+        if conf.url.is_empty() {
+            panic!("db_url needed");
+        }
+
+        let is_persistent_cache = conf.persistent;
+        let loopback_only = conf.loopback;
+        let shared_key = conf.shared_key.clone();
+        let private_key_file = conf.private_key.clone();
+
+        let storage = SqlxStorage::new(&conf).await;
+
+        // Create a random local key.
+        let mut pkcs8_der = if let Some(pk_path) = private_key_file {
+            match std::fs::read(&pk_path) {
+                Ok(pem) => {
+                    let der = pem_rfc7468::decode_vec(&pem)
+                        .map_err(|e| format!("Couldn't decode pem: {e:?}"))?;
+                    der.1
+                }
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    // Generate a new key and put it into the file at the given path
+                    let (pem, der) = generate_rsa_key();
+                    std::fs::write(pk_path, pem).expect("Couldn't save ");
+                    der
+                }
+                Err(e) => Err(format!("Couldn't load key file: {e:?}"))?,
+            }
+        } else {
+            generate_rsa_key().1
+        };
+
+        let local_key_pair = Keypair::rsa_from_pkcs8(&mut pkcs8_der)
+            .map_err(|e| format!("Couldn't load key: {e:?}"))?;
+
         let swarm = crate::domolibp2p::start(shared_key, local_key_pair, loopback_only)
             .await
             .unwrap();
@@ -464,15 +508,13 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
         };
 
         // Populate the cache with the sqlite contents
-
-        let ret = c.storage.get_all_elements();
+        let ret = c.storage.get_all_elements().await;
 
         for elem in ret {
             // non ripubblico
             c.insert_cache_element(elem, false, false).await;
         }
-
-        c
+        Ok(c)
     }
 
     pub async fn pub_value(&mut self, value: Value) {
@@ -547,12 +589,18 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
     }
 
     pub async fn delete_value(&mut self, topic_name: &str, topic_uuid: &str) {
+        let mut value_to_set = serde_json::Value::Null;
+
+        if let Some(old_value) = self.read_cache_element(topic_name, topic_uuid) {
+            value_to_set = old_value.value;
+        }
+
         let timest = utils::get_epoch_ms();
         let elem = DomoCacheElement {
             topic_name: String::from(topic_name),
             topic_uuid: String::from(topic_uuid),
             publication_timestamp: timest,
-            value: serde_json::Value::Null,
+            value: value_to_set,
             deleted: true,
             publisher_peer_id: self.local_peer_id.clone(),
             republication_timestamp: 0,
@@ -605,7 +653,7 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
             }
 
             if persist {
-                self.storage.store(&cache_element);
+                self.storage.store(&cache_element).await;
             }
         }
 
@@ -668,17 +716,22 @@ impl<T: DomoPersistentStorage> DomoCache<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::domopersistentstorage::SqliteStorage;
+    async fn make_cache() -> super::DomoCache {
+        let conf = sifis_config::Cache {
+            url: "sqlite::memory:".to_string(),
+            table: "domo_data".to_string(),
+            persistent: true,
+            private_key: Some("/tmp/test_key.pem".into()),
+            shared_key: "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9"
+                .to_string(),
+            loopback: false,
+        };
 
-    async fn make_cache() -> super::DomoCache<SqliteStorage> {
-        let storage = SqliteStorage::new_in_memory();
+        if let Ok(cache) = super::DomoCache::new(conf).await {
+            return cache;
+        }
 
-        let shared_key =
-            String::from("d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9");
-
-        let local_key = super::Keypair::generate_ed25519();
-
-        super::DomoCache::new(true, storage, shared_key, local_key, false).await
+        panic!("cannot create cache");
     }
 
     #[tokio::test]
@@ -701,7 +754,7 @@ mod tests {
 
         let v = domo_cache.read_cache_element("Domo::Light", "luce-delete");
 
-        assert_eq!(v, None);
+        assert_eq!(v, None)
     }
 
     #[tokio::test]

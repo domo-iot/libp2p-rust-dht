@@ -1,0 +1,3 @@
+FROM arm64v8/alpine
+ADD sifis-dht-broker /
+ENTRYPOINT ["/sifis-dht-broker"]

@@ -76,12 +76,12 @@ impl WebApiManager {
         let tx_pub_message = tx_rest;
 
         let (async_tx_websocket, mut _async_rx_websocket) =
-            broadcast::channel::<AsyncWebSocketDomoMessage>(16);
+            broadcast::channel::<AsyncWebSocketDomoMessage>(64);
 
         let async_tx_websocket_copy = async_tx_websocket.clone();
 
         let (sync_tx_websocket, sync_rx_websocket) =
-            broadcast::channel::<SyncWebSocketDomoMessage>(16);
+            broadcast::channel::<SyncWebSocketDomoMessage>(64);
 
         let sync_tx_websocket_copy = sync_tx_websocket.clone();
 

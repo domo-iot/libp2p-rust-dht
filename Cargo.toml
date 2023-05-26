@@ -1,29 +1,26 @@
 [package]
-name = "sifis-dht"
+name = "sifis-dht-broker"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-vendored = ["reqwest/native-tls-vendored", "rusqlite/bundled"]
+vendored = ["reqwest/native-tls-vendored", "sifis-dht/vendored"]
 
 [dependencies]
 axum = { version = "0.5.6", features = ["ws"] }
-clap = { version = "3.1.18", features = ["derive"] }
+clap = { version = "4.1.1", features = ["derive"] }
 env_logger = "0.9.0"
 futures = "0.3.21"
 futures-util = "0.3.21"
 jsonpath_lib = "0.3.0"
-libp2p = { version = "0.50.0", features = ["tokio", "mdns", "gossipsub", "noise", "yamux", "pnet", "rsa", "tcp", "macros"] }
 log = "0.4.17"
-pem-rfc7468 = "0.3"
 rand = "0.8"
-reqwest = { version = "0.11.10", features = ["json"] }
-rsa = "0.6"
-rusqlite = "0.28.0"
 serde = "1.0.137"
 serde_json = "1.0"
+sifis-dht = { path = "./dht-cache" }
+sifis-config = { path = "./dht-config" }
 time = "0.3.17"
 tokio = { version = "1.19.0", features = ["full"] }
 tokio-tungstenite = "0.17.1"
@@ -32,3 +29,11 @@ url = "2.2.2"
 
 [target.'cfg(unix)'.dependencies]
 nix = "0.24.1"
+
+
+
+[dev-dependencies]
+reqwest = { version = "0.11.10", features = ["json"] }
+
+[workspace]
+members = ["dht-cache", "dht-config"]

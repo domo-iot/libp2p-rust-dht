@@ -1,7 +1,9 @@
 // Gossip includes
 use libp2p::gossipsub::MessageId;
 use libp2p::gossipsub::{
-    Gossipsub, GossipsubEvent, GossipsubMessage, IdentTopic as Topic, MessageAuthenticity,
+    // Gossipsub, GossipsubEvent, GossipsubMessage,
+    IdentTopic as Topic,
+    MessageAuthenticity,
     ValidationMode,
 };
 use libp2p::{gossipsub, tcp};
@@ -10,9 +12,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 //
 
-use libp2p::core::{
-    either::EitherTransport, muxing::StreamMuxerBox, transport, transport::upgrade::Version,
-};
+use libp2p::core::{muxing::StreamMuxerBox, transport, transport::upgrade::Version};
 
 use libp2p::noise;
 use libp2p::pnet::{PnetConfig, PreSharedKey};
@@ -48,7 +48,7 @@ fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], String> {
 
 pub fn build_transport(
     key_pair: identity::Keypair,
-    psk: Option<PreSharedKey>,
+    psk: PreSharedKey,
 ) -> transport::Boxed<(PeerId, StreamMuxerBox)> {
     let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
         .into_authentic(&key_pair)
@@ -57,13 +57,9 @@ pub fn build_transport(
     let yamux_config = YamuxConfig::default();
 
     let base_transport = tcp::tokio::Transport::new(tcp::Config::default().nodelay(true));
-    let maybe_encrypted = match psk {
-        Some(psk) => EitherTransport::Left(
-            base_transport.and_then(move |socket, _| PnetConfig::new(psk).handshake(socket)),
-        ),
-        None => EitherTransport::Right(base_transport),
-    };
-    maybe_encrypted
+
+    base_transport
+        .and_then(move |socket, _| PnetConfig::new(psk).handshake(socket))
         .upgrade(Version::V1)
         .authenticate(noise_config)
         .multiplex(yamux_config)
@@ -83,11 +79,8 @@ pub async fn start(
     let topic_volatile_data = Topic::new("domo-volatile-data");
     let topic_config = Topic::new("domo-config");
 
-    let arr = parse_hex_key(&shared_key);
-    let psk = match arr {
-        Ok(s) => Some(PreSharedKey::new(s)),
-        Err(_e) => panic!("Invalid key"),
-    };
+    let arr = parse_hex_key(&shared_key)?;
+    let psk = PreSharedKey::new(arr);
 
     let transport = build_transport(local_key_pair.clone(), psk);
 
@@ -95,23 +88,24 @@ pub async fn start(
     let mut swarm = {
         let mdnsconf = mdns::Config {
             ttl: Duration::from_secs(600),
-            query_interval: Duration::from_secs(580),
+            query_interval: Duration::from_secs(30),
             enable_ipv6: false,
         };
 
-        let mdns = mdns::tokio::Behaviour::new(mdnsconf)?;
+        let mdns = mdns::tokio::Behaviour::new(mdnsconf, local_peer_id)?;
 
         // To content-address message, we can take the hash of message and use it as an ID.
-        let message_id_fn = |message: &GossipsubMessage| {
+        let message_id_fn = |message: &gossipsub::Message| {
             let mut s = DefaultHasher::new();
             message.data.hash(&mut s);
             MessageId::from(s.finish().to_string())
         };
 
         // Set a custom gossipsub
-        let gossipsub_config = gossipsub::GossipsubConfigBuilder::default()
-            .idle_timeout(Duration::from_secs(60 * 60 * 24))
-            .heartbeat_interval(Duration::from_secs(10)) // This is set to aid debugging by not cluttering the log space
+        let gossipsub_config = gossipsub::ConfigBuilder::default()
+            .idle_timeout(Duration::from_secs(10))
+            .heartbeat_interval(Duration::from_secs(3)) // This is set to aid debugging by not cluttering the log space
+            .check_explicit_peers_ticks(10)
             .validation_mode(ValidationMode::Strict) // This sets the kind of message validation. The default is Strict (enforce message signing)
             .message_id_fn(message_id_fn) // content-address messages. No two messages of the
             // same content will be propagated.
@@ -119,7 +113,7 @@ pub async fn start(
             .expect("Valid config");
 
         // build a gossipsub network behaviour
-        let mut gossipsub: gossipsub::Gossipsub = gossipsub::Gossipsub::new(
+        let mut gossipsub = gossipsub::Behaviour::new(
             MessageAuthenticity::Signed(local_key_pair),
             gossipsub_config,
         )
@@ -156,12 +150,12 @@ pub async fn start(
 #[behaviour(out_event = "OutEvent")]
 pub struct DomoBehaviour {
     pub mdns: libp2p::mdns::tokio::Behaviour,
-    pub gossipsub: Gossipsub,
+    pub gossipsub: gossipsub::Behaviour,
 }
 
 #[derive(Debug)]
 pub enum OutEvent {
-    Gossipsub(GossipsubEvent),
+    Gossipsub(gossipsub::Event),
     Mdns(mdns::Event),
 }
 
@@ -171,8 +165,8 @@ impl From<mdns::Event> for OutEvent {
     }
 }
 
-impl From<GossipsubEvent> for OutEvent {
-    fn from(v: GossipsubEvent) -> Self {
+impl From<gossipsub::Event> for OutEvent {
+    fn from(v: gossipsub::Event) -> Self {
         Self::Gossipsub(v)
     }
 }

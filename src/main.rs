@@ -6,68 +6,33 @@ use std::error::Error;
 use tokio::io::{self, AsyncBufReadExt};
 
 use clap::Parser;
-use sifis_dht::domobroker::{DomoBroker, DomoBrokerConf};
+use serde::{Deserialize, Serialize};
+use sifis_config::{Broker, ConfigParser};
 use sifis_dht::domocache::DomoEvent;
+use sifis_dht_broker::domobroker::DomoBroker;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Serialize, Deserialize)]
 struct Opt {
-    /// Path to a sqlite file
-    #[clap(parse(try_from_str))]
-    sqlite_file: String,
-
-    /// Path to a private key file
-    #[clap(parse(try_from_str))]
-    private_key_file: String,
-
-    /// Use a persistent cache
-    #[clap(parse(try_from_str))]
-    is_persistent_cache: bool,
-
-    /// 32 bytes long shared key in hex format
-    #[clap(parse(try_from_str))]
-    shared_key: String,
-
-    /// HTTP port
-    #[clap(parse(try_from_str))]
-    http_port: u16,
-
-    /// use only loopback iface for libp2p
-    #[clap(parse(try_from_str))]
-    loopback_only: bool,
+    #[clap(flatten)]
+    broker: Broker,
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let opt = Opt::parse();
+    let opt = ConfigParser::<Opt>::new()
+        .with_config_path("/etc/domo/broker.toml")
+        .parse();
 
     let local = OffsetDateTime::now_utc();
 
     log::info!("Program started at {:?}", local);
-
-    let Opt {
-        sqlite_file,
-        private_key_file,
-        is_persistent_cache,
-        shared_key,
-        http_port,
-        loopback_only,
-    } = opt;
 
     env_logger::init();
 
     let mut stdin = io::BufReader::new(io::stdin()).lines();
     let debug_console = std::env::var("DHT_DEBUG_CONSOLE").is_ok();
 
-    let domo_broker_conf = DomoBrokerConf {
-        sqlite_file,
-        private_key_file: Some(private_key_file),
-        is_persistent_cache,
-        shared_key,
-        http_port,
-        loopback_only,
-    };
-
-    let mut domo_broker = DomoBroker::new(domo_broker_conf).await?;
+    let mut domo_broker = DomoBroker::new(opt.broker).await?;
 
     if debug_console {
         loop {
@@ -91,7 +56,9 @@ async fn main() -> Result<(), Box<dyn Error>> {
 fn report_event(m: &DomoEvent) {
     println!("Domo Event received");
     match m {
-        DomoEvent::None => {}
+        DomoEvent::None => {
+            println!("None {:?}", m);
+        }
         DomoEvent::VolatileData(_v) => {
             println!("Volatile");
         }
