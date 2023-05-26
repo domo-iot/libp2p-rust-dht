@@ -589,12 +589,19 @@ impl DomoCache {
     }
 
     pub async fn delete_value(&mut self, topic_name: &str, topic_uuid: &str) {
+
+        let mut value_to_set = serde_json::Value::Null;
+
+        if let Some(old_value) = self.read_cache_element(topic_name, topic_uuid) {
+            value_to_set = old_value.value;
+        }
+
         let timest = utils::get_epoch_ms();
         let elem = DomoCacheElement {
             topic_name: String::from(topic_name),
             topic_uuid: String::from(topic_uuid),
             publication_timestamp: timest,
-            value: serde_json::Value::Null,
+            value: value_to_set,
             deleted: true,
             publisher_peer_id: self.local_peer_id.clone(),
             republication_timestamp: 0,
