@@ -1158,7 +1158,7 @@ mod tests {
                 let expected = serde_json::to_string(&AsyncWebSocketDomoMessage::Persistent {
                     topic_name: "Domo::Light".to_owned(),
                     topic_uuid: "uno".to_owned(),
-                    value: serde_json::Value::Null,
+                    value: serde_json::json!({"connected": true}),
                     deleted: true,
                 })
                 .unwrap();
