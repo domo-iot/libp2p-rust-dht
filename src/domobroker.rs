@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use crate::domocache::{DomoCache, DomoEvent};
-use crate::restmessage;
+use crate::restmessage::{self, RestMessage};
 use crate::webapimanager::WebApiManager;
 use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
@@ -12,6 +12,13 @@ use serde_json::json;
 pub struct DomoBroker {
     pub domo_cache: DomoCache,
     pub web_manager: WebApiManager,
+}
+
+enum Event {
+    WebSocket(SyncWebSocketDomoMessage),
+    Rest(RestMessage),
+    Cache(Result<DomoEvent, Box<dyn Error>>),
+    Continue,
 }
 
 impl DomoBroker {
@@ -28,23 +35,41 @@ impl DomoBroker {
         })
     }
 
-    pub async fn event_loop(&mut self) -> DomoEvent {
-        loop {
-            tokio::select! {
-                webs_message = self.web_manager.sync_rx_websocket.recv() => {
-                    if let Ok(message) = webs_message {
-                        self.handle_websocket_sync_request(message).await;
-                    }
-                },
+    async fn inner_select(&mut self) -> Event {
+        use Event::*;
 
-                Some(rest_message) = self.web_manager.rx_rest.recv() => {
-                    self.handle_rest_request(rest_message).await;
-                },
-
-                m = self.domo_cache.cache_event_loop() => {
-                    let ret = self.handle_cache_event_loop(m);
-                    return ret;
+        tokio::select! {
+            webs_message = self.web_manager.sync_rx_websocket.recv() => {
+                if let Ok(message) = webs_message {
+                    return WebSocket(message);
                 }
+            },
+            Some(rest_message) = self.web_manager.rx_rest.recv() => {
+                return Rest(rest_message);
+            },
+
+            m = self.domo_cache.cache_event_loop() => {
+                return Cache(m);
+            }
+        }
+
+        Continue
+    }
+
+    pub async fn event_loop(&mut self) -> DomoEvent {
+        use Event::*;
+        loop {
+            match self.inner_select().await {
+                WebSocket(m) => {
+                    self.handle_websocket_sync_request(m).await;
+                }
+                Rest(m) => {
+                    self.handle_rest_request(m).await;
+                }
+                Cache(m) => {
+                    return self.handle_cache_event_loop(m);
+                }
+                Continue => {}
             }
         }
     }

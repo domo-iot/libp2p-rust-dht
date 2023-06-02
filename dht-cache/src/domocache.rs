@@ -93,6 +93,15 @@ pub struct DomoCache {
     send_cache_state_timer: tokio::time::Instant,
 }
 
+enum Event {
+    Client(DomoEvent),
+    RefreshTime,
+    PersistentData(String),
+    VolatileData(String),
+    Config(String),
+    Continue,
+}
+
 impl Hash for DomoCache {
     fn hash<H: Hasher>(&self, state: &mut H) {
         for (topic_name, map_topic_name) in self.cache.iter() {
@@ -359,24 +368,21 @@ impl DomoCache {
         }
     }
 
-    pub async fn cache_event_loop(&mut self) -> std::result::Result<DomoEvent, Box<dyn Error>> {
-        loop {
-            tokio::select!(
+    async fn inner_select(&mut self) -> Event {
+        use Event::*;
+        tokio::select!(
+            // a client of this router published something
+            m = self.client_rx_channel.recv() => {
+                let dm = m.unwrap();
+                return Client(dm);
+            },
 
-                // a client of this router published something
-                m = self.client_rx_channel.recv() => {
-                    let dm = m.unwrap();
-                    return Ok(dm);
-                },
+            _ = tokio::time::sleep_until(self.send_cache_state_timer) => {
+                return RefreshTime;
+            },
 
-                _ = tokio::time::sleep_until(self.send_cache_state_timer) => {
-                    self.send_cache_state_timer = tokio::time::Instant::now() + Duration::from_secs(u64::from(SEND_CACHE_HASH_PERIOD));
-                    self.send_cache_state().await;
-                },
-
-                event = self.swarm.select_next_some() => {
+            event = self.swarm.select_next_some() => {
                 match event {
-
                     SwarmEvent::ExpiredListenAddr { address, .. } => {
                         log::info!("Address {address:?} expired");
                     }
@@ -404,18 +410,21 @@ impl DomoCache {
                             message_id: _id,
                             message,
                         },
-                    )) => match message.topic.to_string().as_str() {
-                        "domo-persistent-data" => {
-                            return self.handle_persistent_message_data(&String::from_utf8_lossy(&message.data)).await;
-                        }
-                        "domo-config" => {
-                            self.handle_config_data(&String::from_utf8_lossy(&message.data)).await;
-                        }
-                        "domo-volatile-data" => {
-                            return self.handle_volatile_data(&String::from_utf8_lossy(&message.data));
-                        }
-                        _ => {
-                            log::info!("Not able to recognize message");
+                    )) => {
+                        let data = String::from_utf8(message.data).unwrap();
+                        match message.topic.as_str() {
+                            "domo-persistent-data" => {
+                                return PersistentData(data);
+                            }
+                            "domo-config" => {
+                                return Config(data);
+                            }
+                            "domo-volatile-data" => {
+                                return VolatileData(data);
+                            }
+                            _ => {
+                                log::info!("Not able to recognize message");
+                            }
                         }
                     }
                     SwarmEvent::Behaviour(crate::domolibp2p::OutEvent::Mdns(
@@ -441,9 +450,34 @@ impl DomoCache {
 
                     }
                     _ => {}
-                    }
                 }
-            );
+            }
+        );
+        Continue
+    }
+    pub async fn cache_event_loop(&mut self) -> std::result::Result<DomoEvent, Box<dyn Error>> {
+        use Event::*;
+        loop {
+            match self.inner_select().await {
+                Client(ev) => {
+                    return Ok(ev);
+                }
+                RefreshTime => {
+                    self.send_cache_state_timer = tokio::time::Instant::now()
+                        + Duration::from_secs(u64::from(SEND_CACHE_HASH_PERIOD));
+                    self.send_cache_state().await;
+                }
+                PersistentData(data) => {
+                    return self.handle_persistent_message_data(&data).await;
+                }
+                VolatileData(data) => {
+                    return self.handle_volatile_data(&data);
+                }
+                Config(data) => {
+                    self.handle_config_data(&data).await;
+                }
+                Continue => {}
+            }
         }
     }
 
