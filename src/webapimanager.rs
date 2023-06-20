@@ -25,6 +25,7 @@ use crate::websocketmessage::{
 use crate::{restmessage, utils};
 
 use std::net::TcpListener;
+use crate::utils::get_epoch_ms;
 
 pub struct WebApiManager {
     // rest api listening port
@@ -61,7 +62,7 @@ impl WebApiManager {
             _ = socket::setsockopt(listener.as_raw_fd(), ReuseAddr, &true);
         }
 
-        let (tx_rest, rx_rest) = mpsc::channel(32);
+        let (tx_rest, rx_rest) = mpsc::channel(64);
 
         let tx_get_all = tx_rest.clone();
 
@@ -200,9 +201,10 @@ impl WebApiManager {
             responder: tx_resp,
         };
 
+        println!("Sending POST REQ {}", get_epoch_ms());
         tx_rest.send(m).await.unwrap();
-
         let resp = rx_resp.await.unwrap();
+        println!("Received POST RESP {}", get_epoch_ms());
 
         match resp {
             Ok(resp) => (StatusCode::OK, Json(resp)),

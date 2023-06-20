@@ -8,6 +8,7 @@ use crate::websocketmessage::{
 };
 
 use serde_json::json;
+use crate::utils::get_epoch_ms;
 
 pub struct DomoBroker {
     pub domo_cache: DomoCache,
@@ -259,6 +260,7 @@ impl DomoBroker {
                         deleted: m.deleted,
                     },
                 );
+                println!("SENT DATA ON WS {}", get_epoch_ms());
                 DomoEvent::PersistentData(m2)
             }
             Ok(DomoEvent::VolatileData(m)) => {

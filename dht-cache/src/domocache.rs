@@ -42,7 +42,7 @@ pub enum DomoEvent {
 }
 
 // period at which we send messages containing our cache hash
-const SEND_CACHE_HASH_PERIOD: u8 = 5;
+const SEND_CACHE_HASH_PERIOD: u8 = 120;
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DomoCacheElement {
