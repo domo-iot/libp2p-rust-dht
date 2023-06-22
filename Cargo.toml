@@ -11,7 +11,7 @@ vendored = ["reqwest/native-tls-vendored", "sifis-dht/vendored"]
 [dependencies]
 axum = { version = "0.6", features = ["ws"] }
 clap = { version = "4.1.1", features = ["derive"] }
-env_logger = "0.9.0"
+env_logger = "0.10.0"
 futures = "0.3.21"
 futures-util = "0.3.21"
 jsonpath_lib = "0.3.0"
@@ -24,11 +24,11 @@ sifis-config = { path = "./dht-config" }
 time = "0.3.17"
 tokio = { version = "1.19.0", features = ["full"] }
 tokio-tungstenite = "0.17.1"
-tower-http = { version = "0.3.0", features = ["cors"] }
+tower-http = { version = "0.4.0", features = ["cors"] }
 url = "2.2.2"
 
 [target.'cfg(unix)'.dependencies]
-nix = "0.24.1"
+nix = "0.26"
 
 
 
