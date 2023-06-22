@@ -23,7 +23,7 @@ sqlx = { version = "0.6.3", features = ["sqlite", "runtime-tokio-native-tls", "a
 time = "0.3.17"
 tokio = { version = "1.19.0", features = ["full"] }
 url = "2.2.2"
-rsa = "0.8"
+rsa = "0.9"
 pem-rfc7468 = { version = "0.7", features = ["alloc"] }
 sifis-config = { path = "../dht-config" }
 openssl-sys = "*"
