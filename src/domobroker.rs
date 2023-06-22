@@ -7,8 +7,8 @@ use crate::websocketmessage::{
     AsyncWebSocketDomoMessage, SyncWebSocketDomoMessage, SyncWebSocketDomoRequest,
 };
 
-use serde_json::json;
 use crate::utils::get_epoch_ms;
+use serde_json::json;
 
 pub struct DomoBroker {
     pub domo_cache: DomoCache,

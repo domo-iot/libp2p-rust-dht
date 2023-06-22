@@ -42,7 +42,11 @@ fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], String> {
         }
         Ok(r)
     } else {
-        Err(format!("Len Error: expected {} but got {}", KEY_SIZE * 2, s.len()))
+        Err(format!(
+            "Len Error: expected {} but got {}",
+            KEY_SIZE * 2,
+            s.len()
+        ))
     }
 }
 
@@ -144,7 +148,7 @@ pub async fn start(
 
 // We create a custom network behaviour that combines mDNS and gossipsub.
 #[derive(NetworkBehaviour)]
-#[behaviour(out_event = "OutEvent")]
+#[behaviour(to_swarm = "OutEvent")]
 pub struct DomoBehaviour {
     pub mdns: libp2p::mdns::tokio::Behaviour,
     pub gossipsub: gossipsub::Behaviour,
