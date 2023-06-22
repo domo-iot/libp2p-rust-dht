@@ -154,6 +154,7 @@ pub struct DomoBehaviour {
     pub gossipsub: gossipsub::Behaviour,
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum OutEvent {
     Gossipsub(gossipsub::Event),
