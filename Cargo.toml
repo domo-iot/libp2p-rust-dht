@@ -23,7 +23,7 @@ sifis-dht = { path = "./dht-cache" }
 sifis-config = { path = "./dht-config" }
 time = "0.3.17"
 tokio = { version = "1.19.0", features = ["full"] }
-tokio-tungstenite = "0.17.1"
+tokio-tungstenite = "0.19"
 tower-http = { version = "0.4.0", features = ["cors"] }
 url = "2.2.2"
 
