@@ -24,8 +24,8 @@ use crate::websocketmessage::{
 };
 use crate::{restmessage, utils};
 
-use std::net::TcpListener;
 use crate::utils::get_epoch_ms;
+use std::net::TcpListener;
 
 pub struct WebApiManager {
     // rest api listening port
@@ -118,8 +118,7 @@ impl WebApiManager {
             .route(
                 "/ws",
                 get(WebApiManager::handle_websocket_req)
-                    .layer(Extension(async_tx_websocket_copy))
-                    .layer(Extension(sync_tx_websocket_copy)),
+                    .layer(Extension((async_tx_websocket_copy, sync_tx_websocket_copy))),
             )
             .layer(
                 CorsLayer::new()
@@ -167,8 +166,8 @@ impl WebApiManager {
     }
 
     async fn pub_message(
-        Json(value): Json<serde_json::Value>,
         Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+        Json(value): Json<serde_json::Value>,
     ) -> impl IntoResponse {
         let (tx_resp, rx_resp) = oneshot::channel();
 
@@ -188,9 +187,9 @@ impl WebApiManager {
     }
 
     async fn post_topicname_topicuuid_handler(
-        Json(value): Json<serde_json::Value>,
         Path((topic_name, topic_uuid)): Path<(String, String)>,
         Extension(tx_rest): Extension<Sender<restmessage::RestMessage>>,
+        Json(value): Json<serde_json::Value>,
     ) -> impl IntoResponse {
         let (tx_resp, rx_resp) = oneshot::channel();
 
@@ -270,8 +269,10 @@ impl WebApiManager {
 
     async fn handle_websocket_req(
         ws: WebSocketUpgrade,
-        Extension(async_tx_ws): Extension<broadcast::Sender<AsyncWebSocketDomoMessage>>,
-        Extension(sync_tx_ws): Extension<broadcast::Sender<SyncWebSocketDomoMessage>>,
+        Extension((async_tx_ws, sync_tx_ws)): Extension<(
+            broadcast::Sender<AsyncWebSocketDomoMessage>,
+            broadcast::Sender<SyncWebSocketDomoMessage>,
+        )>,
     ) -> impl IntoResponse {
         // channel for receiving async messages
         let mut async_rx_ws = async_tx_ws.subscribe();
