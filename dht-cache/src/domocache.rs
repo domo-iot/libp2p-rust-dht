@@ -1,3 +1,4 @@
+//! Cached access to the DHT
 use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use crate::utils;
 use futures::prelude::*;
@@ -33,7 +34,7 @@ fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
     (pem, der)
 }
 
-// possible events returned by cache_loop_event()
+/// Events returned by [DomoCache::cache_event_loop]
 #[derive(Debug)]
 pub enum DomoEvent {
     None,
@@ -44,14 +45,22 @@ pub enum DomoEvent {
 // period at which we send messages containing our cache hash
 const SEND_CACHE_HASH_PERIOD: u8 = 120;
 
+/// Full Cache Element
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DomoCacheElement {
+    /// Free-form topic name
     pub topic_name: String,
+    /// Unique identifier of the element
     pub topic_uuid: String,
+    /// JSON-serializable Value
     pub value: Value,
+    /// If true the element could be expunged from the local cache
     pub deleted: bool,
+    /// Time of the first pubblication
     pub publication_timestamp: u128,
+    /// First peer publishing it
     pub publisher_peer_id: String,
+    /// If non-zero the element is republished as part of a cache sync
     pub republication_timestamp: u128,
 }
 
@@ -79,6 +88,9 @@ impl Display for DomoCacheElement {
     }
 }
 
+/// Cached access to the DHT
+///
+/// It keeps an in-memory (or persistent) cache of the whole DHT.
 pub struct DomoCache {
     storage: SqlxStorage,
     pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
@@ -116,7 +128,7 @@ impl Hash for DomoCache {
 }
 
 impl DomoCache {
-    #[allow(unused)]
+    /// Apply a jsonpath expression over the elements of a topic.
     pub fn filter_with_topic_name(
         &self,
         topic_name: &str,
@@ -231,6 +243,7 @@ impl DomoCache {
         (true, true)
     }
 
+    /// Get a value identified by its uuid within a topic.
     pub fn get_topic_uuid(&self, topic_name: &str, topic_uuid: &str) -> Result<Value, String> {
         let ret = self.read_cache_element(topic_name, topic_uuid);
         match ret {
@@ -243,6 +256,7 @@ impl DomoCache {
         }
     }
 
+    /// Get all the values within a topic.
     pub fn get_topic_name(&self, topic_name: &str) -> Result<Value, String> {
         let s = r#"[]"#;
         let mut ret: Value = serde_json::from_str(s).unwrap();
@@ -265,6 +279,7 @@ impl DomoCache {
         }
     }
 
+    /// Return the whole cache as a JSON Value
     pub fn get_all(&self) -> Value {
         let s = r#"[]"#;
         let mut ret: Value = serde_json::from_str(s).unwrap();
@@ -359,6 +374,7 @@ impl DomoCache {
         }
     }
 
+    /// Print the status of the cache across the known peers.
     pub fn print_peers_cache(&self) {
         for (peer_id, peer_data) in self.peers_caches_state.iter() {
             println!(
@@ -455,6 +471,10 @@ impl DomoCache {
         );
         Continue
     }
+
+    /// Cache event loop
+    ///
+    /// To be called as often as needed to keep the cache in-sync and receive new data.
     pub async fn cache_event_loop(&mut self) -> std::result::Result<DomoEvent, Box<dyn Error>> {
         use Event::*;
         loop {
@@ -481,6 +501,9 @@ impl DomoCache {
         }
     }
 
+    /// Instantiate a new cache
+    ///
+    /// See [sifis_config::Cache] for the available parameters.
     pub async fn new(conf: sifis_config::Cache) -> Result<Self, Box<dyn Error>> {
         if conf.url.is_empty() {
             panic!("db_url needed");
@@ -551,6 +574,10 @@ impl DomoCache {
         Ok(c)
     }
 
+    /// Publish a volatile value on the DHT
+    ///
+    /// All the peers reachable will receive it.
+    /// Peers joining later would not receive it.
     pub async fn pub_value(&mut self, value: Value) {
         let topic = Topic::new("domo-volatile-data");
 
@@ -596,6 +623,7 @@ impl DomoCache {
         }
     }
 
+    /// Print the current DHT state
     pub fn print(&self) {
         for (topic_name, topic_name_map) in self.cache.iter() {
             let mut first = true;
@@ -612,16 +640,22 @@ impl DomoCache {
         }
     }
 
+    /// Print the DHT current hash
     pub fn print_cache_hash(&self) {
         println!("Hash {}", self.get_cache_hash())
     }
 
+    /// Compute the hash of the current DHT state
     pub fn get_cache_hash(&self) -> u64 {
         let mut s = DefaultHasher::new();
         self.hash(&mut s);
         s.finish()
     }
 
+    /// Mark a persistent value as deleted
+    ///
+    /// It will not be propagated and it is expunged from the initial DHT state fed to new peers
+    /// joining.
     pub async fn delete_value(&mut self, topic_name: &str, topic_uuid: &str) {
         let mut value_to_set = serde_json::Value::Null;
 
@@ -644,7 +678,9 @@ impl DomoCache {
             .await;
     }
 
-    // metodo chiamato dall'applicazione, metto in cache e pubblico
+    /// Write/Update a persistent value
+    ///
+    /// The value will be part of the initial DHT state a peer joining will receive.
     pub async fn write_value(&mut self, topic_name: &str, topic_uuid: &str, value: Value) {
         let timest = utils::get_epoch_ms();
         let elem = DomoCacheElement {
