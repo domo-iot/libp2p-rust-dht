@@ -65,7 +65,7 @@ pub struct DomoCacheElement {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct DomoCacheStateMessage {
+struct DomoCacheStateMessage {
     pub peer_id: String,
     pub cache_hash: u64,
     pub publication_timestamp: u128,
@@ -94,7 +94,7 @@ impl Display for DomoCacheElement {
 pub struct DomoCache {
     storage: SqlxStorage,
     pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
-    pub peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
+    peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
     pub publish_cache_counter: u8,
     pub last_cache_repub_timestamp: u128,
     pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
@@ -597,7 +597,7 @@ impl DomoCache {
         self.client_tx_channel.send(ev).await.unwrap();
     }
 
-    pub async fn gossip_pub(&mut self, mut m: DomoCacheElement, republished: bool) {
+    async fn gossip_pub(&mut self, mut m: DomoCacheElement, republished: bool) {
         let topic = Topic::new("domo-persistent-data");
 
         if republished {

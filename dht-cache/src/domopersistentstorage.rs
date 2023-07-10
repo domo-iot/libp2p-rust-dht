@@ -8,7 +8,7 @@ use sqlx::{
     any::{AnyConnectOptions, AnyKind, AnyRow},
     postgres::PgConnectOptions,
     sqlite::SqliteConnectOptions,
-    AnyConnection, ConnectOptions, Connection, Executor, Row, SqliteConnection,
+    AnyConnection, ConnectOptions, Executor, Row,
 };
 
 use std::str::FromStr;
@@ -76,7 +76,9 @@ impl SqlxStorage {
         }
     }
 
+    #[cfg(test)]
     pub async fn new_in_memory(db_table: &str) -> Self {
+        use sqlx::{Connection, SqliteConnection};
         let conn = SqliteConnection::connect("sqlite::memory:").await.unwrap();
 
         Self::with_connection(conn.into(), db_table, true).await
