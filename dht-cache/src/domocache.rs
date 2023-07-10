@@ -504,7 +504,7 @@ impl DomoCache {
     /// Instantiate a new cache
     ///
     /// See [sifis_config::Cache] for the available parameters.
-    pub async fn new(conf: sifis_config::Cache) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(conf: crate::Config) -> Result<Self, Box<dyn Error>> {
         if conf.url.is_empty() {
             panic!("db_url needed");
         }
