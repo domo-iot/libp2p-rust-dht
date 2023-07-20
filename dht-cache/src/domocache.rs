@@ -381,6 +381,15 @@ impl DomoCache {
         }
     }
 
+    /// Get the currently seen peers
+    ///
+    /// And their known hash and timestamp
+    pub fn get_peers_stats(&self) -> impl Iterator<Item = (&str, u64, u128)> {
+        self.peers_caches_state
+            .values()
+            .map(|v| (v.peer_id.as_str(), v.cache_hash, v.publication_timestamp))
+    }
+
     async fn inner_select(&mut self) -> Event {
         use Event::*;
         tokio::select!(
