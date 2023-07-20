@@ -23,12 +23,13 @@ use libp2p::Transport;
 use libp2p::{identity, mdns, swarm::NetworkBehaviour, PeerId, Swarm};
 
 use libp2p::swarm::SwarmBuilder;
-use std::error::Error;
 use std::time::Duration;
+
+use crate::Error;
 
 const KEY_SIZE: usize = 32;
 
-fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], String> {
+fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], Error> {
     if s.len() == KEY_SIZE * 2 {
         let mut r = [0u8; KEY_SIZE];
         for i in 0..KEY_SIZE {
@@ -37,16 +38,16 @@ fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], String> {
                 Ok(res) => {
                     r[i] = res;
                 }
-                Err(_e) => return Err(String::from("Error while parsing")),
+                Err(_e) => return Err(Error::Hex("Error while parsing".into())),
             }
         }
         Ok(r)
     } else {
-        Err(format!(
+        Err(Error::Hex(format!(
             "Len Error: expected {} but got {}",
             KEY_SIZE * 2,
             s.len()
-        ))
+        )))
     }
 }
 
@@ -72,7 +73,7 @@ pub async fn start(
     shared_key: String,
     local_key_pair: identity::Keypair,
     loopback_only: bool,
-) -> Result<Swarm<DomoBehaviour>, Box<dyn Error>> {
+) -> Result<Swarm<DomoBehaviour>, Error> {
     let local_peer_id = PeerId::from(local_key_pair.public());
 
     // Create a Gossipsub topic

@@ -1,6 +1,7 @@
 //! Cached access to the DHT
 use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use crate::utils;
+use crate::Error;
 use futures::prelude::*;
 use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::identity::Keypair;
@@ -12,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
-use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
@@ -162,10 +162,7 @@ impl DomoCache {
         }
     }
 
-    fn handle_volatile_data(
-        &self,
-        message: &str,
-    ) -> std::result::Result<DomoEvent, Box<dyn Error>> {
+    fn handle_volatile_data(&self, message: &str) -> std::result::Result<DomoEvent, Error> {
         let m: serde_json::Value = serde_json::from_str(message)?;
         Ok(DomoEvent::VolatileData(m))
     }
@@ -173,7 +170,7 @@ impl DomoCache {
     async fn handle_persistent_message_data(
         &mut self,
         message: &str,
-    ) -> std::result::Result<DomoEvent, Box<dyn Error>> {
+    ) -> std::result::Result<DomoEvent, Error> {
         let mut m: DomoCacheElement = serde_json::from_str(message)?;
 
         // rimetto a 0 il republication timestamp altrimenti cambia hash
@@ -475,7 +472,7 @@ impl DomoCache {
     /// Cache event loop
     ///
     /// To be called as often as needed to keep the cache in-sync and receive new data.
-    pub async fn cache_event_loop(&mut self) -> std::result::Result<DomoEvent, Box<dyn Error>> {
+    pub async fn cache_event_loop(&mut self) -> std::result::Result<DomoEvent, Error> {
         use Event::*;
         loop {
             match self.inner_select().await {
@@ -504,7 +501,7 @@ impl DomoCache {
     /// Instantiate a new cache
     ///
     /// See [sifis_config::Cache] for the available parameters.
-    pub async fn new(conf: crate::Config) -> Result<Self, Box<dyn Error>> {
+    pub async fn new(conf: crate::Config) -> Result<Self, Error> {
         if conf.url.is_empty() {
             panic!("db_url needed");
         }
@@ -520,24 +517,22 @@ impl DomoCache {
         let mut pkcs8_der = if let Some(pk_path) = private_key_file {
             match std::fs::read(&pk_path) {
                 Ok(pem) => {
-                    let der = pem_rfc7468::decode_vec(&pem)
-                        .map_err(|e| format!("Couldn't decode pem: {e:?}"))?;
+                    let der = pem_rfc7468::decode_vec(&pem)?;
                     der.1
                 }
                 Err(e) if e.kind() == ErrorKind::NotFound => {
                     // Generate a new key and put it into the file at the given path
                     let (pem, der) = generate_rsa_key();
-                    std::fs::write(pk_path, pem).expect("Couldn't save ");
+                    std::fs::write(pk_path, pem)?;
                     der
                 }
-                Err(e) => Err(format!("Couldn't load key file: {e:?}"))?,
+                Err(e) => Err(e)?,
             }
         } else {
             generate_rsa_key().1
         };
 
-        let local_key_pair = Keypair::rsa_from_pkcs8(&mut pkcs8_der)
-            .map_err(|e| format!("Couldn't load key: {e:?}"))?;
+        let local_key_pair = Keypair::rsa_from_pkcs8(&mut pkcs8_der)?;
 
         let swarm = crate::domolibp2p::start(shared_key, local_key_pair, loopback_only)
             .await

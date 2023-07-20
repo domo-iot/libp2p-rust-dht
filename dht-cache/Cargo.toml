@@ -24,10 +24,12 @@ time = "0.3.17"
 tokio = { version = "1.19.0", features = ["full"] }
 url = "2.2.2"
 rsa = "0.9"
-pem-rfc7468 = { version = "0.7", features = ["alloc"] }
+pem-rfc7468 = { version = "0.7", features = ["std"] }
 sifis-config = { path = "../dht-config" }
 openssl-sys = "*"
 libsqlite3-sys = "*"
+thiserror = "1.0.43"
+anyhow = "1.0.72"
 
 
 [package.metadata.cargo-udeps.ignore]
