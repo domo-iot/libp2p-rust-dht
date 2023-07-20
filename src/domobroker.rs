@@ -18,7 +18,7 @@ pub struct DomoBroker {
 enum Event {
     WebSocket(SyncWebSocketDomoMessage),
     Rest(RestMessage),
-    Cache(Result<DomoEvent, Box<dyn Error>>),
+    Cache(DomoEvent),
     Continue,
 }
 
@@ -50,7 +50,7 @@ impl DomoBroker {
             },
 
             m = self.domo_cache.cache_event_loop() => {
-                return Cache(m);
+                return Cache(m.unwrap_or(DomoEvent::None));
             }
         }
 
@@ -242,10 +242,10 @@ impl DomoBroker {
         }
     }
 
-    fn handle_cache_event_loop(&mut self, m: Result<DomoEvent, Box<dyn Error>>) -> DomoEvent {
+    fn handle_cache_event_loop(&mut self, m: DomoEvent) -> DomoEvent {
         match m {
-            Ok(DomoEvent::None) => DomoEvent::None,
-            Ok(DomoEvent::PersistentData(m)) => {
+            DomoEvent::None => DomoEvent::None,
+            DomoEvent::PersistentData(m) => {
                 println!(
                     "Persistent message received {} {}",
                     m.topic_name, m.topic_uuid
@@ -263,7 +263,7 @@ impl DomoBroker {
                 println!("SENT DATA ON WS {}", get_epoch_ms());
                 DomoEvent::PersistentData(m2)
             }
-            Ok(DomoEvent::VolatileData(m)) => {
+            DomoEvent::VolatileData(m) => {
                 println!("Volatile message {m}");
 
                 let m2 = m.clone();
@@ -274,7 +274,6 @@ impl DomoBroker {
 
                 DomoEvent::VolatileData(m2)
             }
-            _ => DomoEvent::None,
         }
     }
 }
