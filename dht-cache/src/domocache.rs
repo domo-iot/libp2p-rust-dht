@@ -93,11 +93,11 @@ impl Display for DomoCacheElement {
 /// It keeps an in-memory (or persistent) cache of the whole DHT.
 pub struct DomoCache {
     storage: SqlxStorage,
-    pub cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
+    pub(crate) cache: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
     peers_caches_state: BTreeMap<String, DomoCacheStateMessage>,
-    pub publish_cache_counter: u8,
-    pub last_cache_repub_timestamp: u128,
-    pub swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
+    pub(crate) publish_cache_counter: u8,
+    pub(crate) last_cache_repub_timestamp: u128,
+    pub(crate) swarm: libp2p::Swarm<crate::domolibp2p::DomoBehaviour>,
     pub is_persistent_cache: bool,
     pub local_peer_id: String,
     client_tx_channel: Sender<DomoEvent>,
