@@ -1,5 +1,6 @@
 //! Simple DHT/messaging system based on libp2p
 //!
+mod data;
 pub mod domocache;
 mod domolibp2p;
 mod domopersistentstorage;

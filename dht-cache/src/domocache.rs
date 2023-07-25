@@ -1,4 +1,5 @@
 //! Cached access to the DHT
+pub use crate::data::*;
 use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use crate::utils;
 use crate::Error;
@@ -9,17 +10,18 @@ use libp2p::mdns;
 use libp2p::swarm::SwarmEvent;
 use rsa::pkcs8::EncodePrivateKey;
 use rsa::RsaPrivateKey;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
-use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::io::ErrorKind;
 use std::time::Duration;
 use time::OffsetDateTime;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
+
+// period at which we send messages containing our cache hash
+const SEND_CACHE_HASH_PERIOD: u8 = 120;
 
 fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
     let mut rng = rand::thread_rng();
@@ -32,60 +34,6 @@ fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
         .to_vec();
     let der = private_key.to_pkcs8_der().unwrap().as_bytes().to_vec();
     (pem, der)
-}
-
-/// Events returned by [DomoCache::cache_event_loop]
-#[derive(Debug)]
-pub enum DomoEvent {
-    None,
-    VolatileData(serde_json::Value),
-    PersistentData(DomoCacheElement),
-}
-
-// period at which we send messages containing our cache hash
-const SEND_CACHE_HASH_PERIOD: u8 = 120;
-
-/// Full Cache Element
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-pub struct DomoCacheElement {
-    /// Free-form topic name
-    pub topic_name: String,
-    /// Unique identifier of the element
-    pub topic_uuid: String,
-    /// JSON-serializable Value
-    pub value: Value,
-    /// If true the element could be expunged from the local cache
-    pub deleted: bool,
-    /// Time of the first pubblication
-    pub publication_timestamp: u128,
-    /// First peer publishing it
-    pub publisher_peer_id: String,
-    /// If non-zero the element is republished as part of a cache sync
-    pub republication_timestamp: u128,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
-struct DomoCacheStateMessage {
-    pub peer_id: String,
-    pub cache_hash: u64,
-    pub publication_timestamp: u128,
-}
-
-impl Display for DomoCacheElement {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "(topic_name: {}, topic_uuid:{}, \
-            value: {}, deleted: {}, publication_timestamp: {}, \
-            peer_id: {})",
-            self.topic_name,
-            self.topic_uuid,
-            self.value,
-            self.deleted,
-            self.publication_timestamp,
-            self.publisher_peer_id
-        )
-    }
 }
 
 /// Cached access to the DHT
