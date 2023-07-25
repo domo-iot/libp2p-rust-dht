@@ -192,7 +192,9 @@ where
             cmd = cmd.mut_arg(key, |a| a.default_value(val).required(false))
         }
 
-        let matches = cmd.get_matches();
+        let matches = cmd
+            .arg(Arg::new("config").short('c').long("config"))
+            .get_matches();
 
         <T as FromArgMatches>::from_arg_matches(&matches).expect("Internal error parsing matches")
     }
