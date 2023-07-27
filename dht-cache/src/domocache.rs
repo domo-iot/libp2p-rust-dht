@@ -1,5 +1,6 @@
 //! Cached access to the DHT
 pub use crate::data::*;
+use crate::domolibp2p::generate_rsa_key;
 use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use crate::utils;
 use crate::Error;
@@ -8,8 +9,6 @@ use libp2p::gossipsub::IdentTopic as Topic;
 use libp2p::identity::Keypair;
 use libp2p::mdns;
 use libp2p::swarm::SwarmEvent;
-use rsa::pkcs8::EncodePrivateKey;
-use rsa::RsaPrivateKey;
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
@@ -22,19 +21,6 @@ use tokio::sync::mpsc::{Receiver, Sender};
 
 // period at which we send messages containing our cache hash
 const SEND_CACHE_HASH_PERIOD: u8 = 120;
-
-fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
-    let mut rng = rand::thread_rng();
-    let bits = 2048;
-    let private_key = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
-    let pem = private_key
-        .to_pkcs8_pem(Default::default())
-        .unwrap()
-        .as_bytes()
-        .to_vec();
-    let der = private_key.to_pkcs8_der().unwrap().as_bytes().to_vec();
-    (pem, der)
-}
 
 /// Cached access to the DHT
 ///

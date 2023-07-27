@@ -8,6 +8,9 @@ use libp2p::gossipsub::{
 };
 use libp2p::{gossipsub, tcp};
 
+use rsa::pkcs8::EncodePrivateKey;
+use rsa::RsaPrivateKey;
+
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 //
@@ -67,6 +70,19 @@ pub fn build_transport(
         .multiplex(yamux_config)
         .timeout(Duration::from_secs(20))
         .boxed()
+}
+
+pub fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
+    let mut rng = rand::thread_rng();
+    let bits = 2048;
+    let private_key = RsaPrivateKey::new(&mut rng, bits).expect("failed to generate a key");
+    let pem = private_key
+        .to_pkcs8_pem(Default::default())
+        .unwrap()
+        .as_bytes()
+        .to_vec();
+    let der = private_key.to_pkcs8_der().unwrap().as_bytes().to_vec();
+    (pem, der)
 }
 
 pub async fn start(
