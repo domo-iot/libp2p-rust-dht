@@ -12,7 +12,7 @@ pub enum DomoEvent {
 }
 
 /// Full Cache Element
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Default, Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct DomoCacheElement {
     /// Free-form topic name
     pub topic_name: String,
