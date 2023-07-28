@@ -225,10 +225,16 @@ mod tests {
         let _s = super::SqlxStorage::new(&db_config).await;
     }
 
+    fn get_pg_db() -> String {
+        std::env::var("DOMO_DHT_TEST_DB").unwrap_or_else(|_| {
+            "postgres://postgres:mysecretpassword@localhost/postgres".to_string()
+        })
+    }
+
     #[tokio::test]
     async fn test_pgsql_db_connection() {
         let db_config = sifis_config::Cache {
-            url: "postgres://postgres:mysecretpassword@localhost/postgres".to_string(),
+            url: get_pg_db(),
             table: "domo_test_pgsql_connection".to_string(),
             persistent: true,
             ..Default::default()
@@ -246,7 +252,7 @@ mod tests {
         assert_eq!(v.len(), 0);
 
         let db_config = sifis_config::Cache {
-            url: "postgres://postgres:mysecretpassword@localhost/postgres".to_string(),
+            url: get_pg_db(),
             table: "test_initial_get_all_elements".to_string(),
             persistent: true,
             ..Default::default()
@@ -280,7 +286,7 @@ mod tests {
         assert_eq!(v[0], m);
 
         let db_config = sifis_config::Cache {
-            url: "postgres://postgres:mysecretpassword@localhost/postgres".to_string(),
+            url: get_pg_db(),
             table: "test_store".to_string(),
             persistent: true,
             ..Default::default()
