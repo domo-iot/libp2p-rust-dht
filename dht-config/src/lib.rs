@@ -92,7 +92,7 @@ where
     }
     /// Set a custom config file path
     ///
-    /// By default uses the result of [Command::get_name] with the extension `.toml`.
+    /// By default uses the result of [clap::Command::get_name] with the extension `.toml`.
     pub fn with_config_path<P: AsRef<Path>>(mut self, path: P) -> Self {
         self.default_path = Some(path.as_ref().to_owned());
         self
@@ -100,7 +100,7 @@ where
 
     /// Set a custom prefix for the env variable lookup
     ///
-    /// By default uses the result of [Command::get_name] with `_`.
+    /// By default uses the result of [clap::Command::get_name] with `_`.
     pub fn with_env_prefix<S: ToString>(mut self, prefix: S) -> Self {
         self.prefix = Some(prefix.to_string());
         self
