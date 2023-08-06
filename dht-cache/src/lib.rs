@@ -1,6 +1,8 @@
 //! Simple DHT/messaging system based on libp2p
 //!
-mod data;
+pub mod cache;
+pub mod data;
+pub mod dht;
 pub mod domocache;
 mod domolibp2p;
 mod domopersistentstorage;
@@ -32,4 +34,10 @@ pub enum Error {
     Transport(#[from] libp2p::TransportError<std::io::Error>),
     #[error("Cannot parse the multiaddr")]
     MultiAddr(#[from] libp2p::multiaddr::Error),
+    #[error("Internal channel dropped")]
+    Channel,
+    #[error("Missing configuration")]
+    MissingConfig,
+    #[error("Invalid JSONPath expression")]
+    Jsonpath,
 }

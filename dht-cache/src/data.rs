@@ -1,14 +1,19 @@
-//! Cached access to the DHT
+//! Data types for interacting with the DHT
+//!
+//! The DHT may persist Elements indexed by a topic and an uuid or broadcast free-form messages.
+//!
+//!
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::{Display, Formatter};
 
-/// Events returned by [DomoCache::cache_event_loop]
+/// Events of interest
 #[derive(Debug)]
 pub enum DomoEvent {
     None,
     VolatileData(serde_json::Value),
     PersistentData(DomoCacheElement),
+    NewPeers(Vec<String>),
 }
 
 /// Full Cache Element
@@ -30,6 +35,7 @@ pub struct DomoCacheElement {
     pub republication_timestamp: u128,
 }
 
+/// Summary of the current state of the DHT according to a peer
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub(crate) struct DomoCacheStateMessage {
     pub peer_id: String,

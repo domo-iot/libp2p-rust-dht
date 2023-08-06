@@ -13,6 +13,7 @@ use tokio::task::JoinHandle;
 /// Network commands
 #[derive(Debug)]
 pub enum Command {
+    Config(Value),
     Broadcast(Value),
     Publish(Value),
     Stop,
@@ -48,6 +49,14 @@ fn handle_command(swarm: &mut Swarm<DomoBehaviour>, cmd: Command) -> bool {
                 .gossipsub
                 .publish(topic, m2.as_bytes())
             {
+                log::info!("Publish error: {e:?}");
+            }
+            true
+        }
+        Config(val) => {
+            let topic = Topic::new("domo-config");
+            let m = serde_json::to_string(&val).unwrap();
+            if let Err(e) = swarm.behaviour_mut().gossipsub.publish(topic, m.as_bytes()) {
                 log::info!("Publish error: {e:?}");
             }
             true
@@ -139,7 +148,7 @@ pub fn dht_channel(
 ) -> (
     UnboundedSender<Command>,
     UnboundedReceiver<Event>,
-    JoinHandle<()>,
+    JoinHandle<Swarm<DomoBehaviour>>,
 ) {
     let (cmd_send, mut cmd_recv) = mpsc::unbounded_channel();
     let (mut ev_send, ev_recv) = mpsc::unbounded_channel();
@@ -151,13 +160,13 @@ pub fn dht_channel(
                     log::debug!("command {cmd:?}");
                     if !cmd.is_some_and(|cmd| handle_command(&mut swarm, cmd)) {
                         log::debug!("Exiting cmd");
-                        return
+                        return swarm
                     }
                 }
                 ev = swarm.select_next_some() => {
                     if handle_swarm_event(&mut swarm, ev, &mut ev_send).is_err() {
                         log::debug!("Exiting ev");
-                        return
+                        return swarm
                     }
                 }
             }
@@ -168,20 +177,36 @@ pub fn dht_channel(
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use super::*;
     use libp2p_swarm_test::SwarmExt;
     use serde_json::json;
 
-    #[tokio::test]
-    async fn multiple_peers() {
-        env_logger::init();
+    pub async fn make_peer() -> Swarm<DomoBehaviour> {
+        let mut a = Swarm::new_ephemeral(|identity| DomoBehaviour::new(&identity).unwrap());
+        a.listen().await;
+
+        a
+    }
+
+    pub async fn connect_peer(a: &mut Swarm<DomoBehaviour>, b: &mut Swarm<DomoBehaviour>) {
+        a.connect(b).await;
+
+        let peers: Vec<_> = a.connected_peers().cloned().collect();
+
+        for peer in peers {
+            a.behaviour_mut().gossipsub.add_explicit_peer(&peer);
+        }
+    }
+
+    pub async fn make_peers() -> [Swarm<DomoBehaviour>; 3] {
+        let _ = env_logger::builder().is_test(true).try_init();
         let mut a = Swarm::new_ephemeral(|identity| DomoBehaviour::new(&identity).unwrap());
         let mut b = Swarm::new_ephemeral(|identity| DomoBehaviour::new(&identity).unwrap());
         let mut c = Swarm::new_ephemeral(|identity| DomoBehaviour::new(&identity).unwrap());
 
         for a in a.external_addresses() {
-            println!("{a:?}");
+            log::info!("{a:?}");
         }
 
         a.listen().await;
@@ -209,6 +234,13 @@ mod test {
         for peer in peers {
             c.behaviour_mut().gossipsub.add_explicit_peer(&peer);
         }
+
+        [a, b, c]
+    }
+
+    #[tokio::test]
+    async fn multiple_peers() {
+        let [a, b, c] = make_peers().await;
 
         let (a_s, mut ar, _) = dht_channel(a);
         let (b_s, br, _) = dht_channel(b);
