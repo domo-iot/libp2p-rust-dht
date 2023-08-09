@@ -274,6 +274,7 @@ impl DomoBroker {
 
                 DomoEvent::VolatileData(m2)
             }
+            DomoEvent::NewPeers(_) => DomoEvent::None,
         }
     }
 }

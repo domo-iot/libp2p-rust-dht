@@ -65,6 +65,9 @@ fn report_event(m: &DomoEvent) {
         DomoEvent::PersistentData(_v) => {
             println!("Persistent");
         }
+        DomoEvent::NewPeers(peers) => {
+            println!("New peers {:#?}", peers);
+        }
     }
 }
 
