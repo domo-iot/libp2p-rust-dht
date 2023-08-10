@@ -1,6 +1,7 @@
 //! Local in-memory cache
 
 pub use crate::data::*;
+use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use serde_json::Value;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
@@ -8,18 +9,56 @@ use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 
+#[derive(Default)]
+pub(crate) struct InnerCache {
+    pub mem: BTreeMap<String, BTreeMap<String, DomoCacheElement>>,
+    pub store: Option<SqlxStorage>,
+}
+
+/// SAFETY: the SqlxStorage access is only over write()
+unsafe impl std::marker::Sync for InnerCache {}
+
+impl InnerCache {
+    pub fn put(&mut self, elem: &DomoCacheElement) {
+        let topic_name = elem.topic_name.clone();
+        let topic_uuid = &elem.topic_uuid;
+
+        self.mem
+            .entry(topic_name)
+            .and_modify(|topic| {
+                topic.insert(topic_uuid.to_owned(), elem.to_owned());
+            })
+            .or_insert_with(|| [(topic_uuid.to_owned(), elem.to_owned())].into());
+    }
+}
+
 /// Local cache
-#[derive(Default, Clone, Debug)]
-pub struct LocalCache(Arc<RwLock<BTreeMap<String, BTreeMap<String, DomoCacheElement>>>>);
+#[derive(Default, Clone)]
+pub struct LocalCache(Arc<RwLock<InnerCache>>);
 
 impl LocalCache {
+    pub async fn with_config(db_config: &sifis_config::Cache) -> Self {
+        let mut inner = InnerCache::default();
+        let mut store = SqlxStorage::new(db_config).await;
+
+        for a in store.get_all_elements().await {
+            inner.put(&a);
+        }
+
+        if db_config.persistent {
+            inner.store = Some(store);
+        }
+
+        LocalCache(Arc::new(RwLock::new(inner)))
+    }
+
     pub fn new() -> Self {
         Default::default()
     }
 
     /// Feeds a slice of this type into the given [`Hasher`].
     pub async fn hash<H: Hasher>(&self, state: &mut H) {
-        let cache = self.0.read().await;
+        let cache = &self.0.read().await.mem;
         for (topic_name, map_topic_name) in cache.iter() {
             topic_name.hash(state);
 
@@ -35,15 +74,12 @@ impl LocalCache {
     /// If it is already present overwrite it
     pub async fn put(&self, elem: &DomoCacheElement) {
         let mut cache = self.0.write().await;
-        let topic_name = elem.topic_name.clone();
-        let topic_uuid = &elem.topic_uuid;
 
-        cache
-            .entry(topic_name)
-            .and_modify(|topic| {
-                topic.insert(topic_uuid.to_owned(), elem.to_owned());
-            })
-            .or_insert_with(|| [(topic_uuid.to_owned(), elem.to_owned())].into());
+        if let Some(storage) = cache.store.as_mut() {
+            storage.store(&elem).await;
+        }
+
+        cache.put(elem);
     }
 
     /// Try to insert the element in the cache
@@ -54,9 +90,9 @@ impl LocalCache {
         let topic_name = elem.topic_name.clone();
         let topic_uuid = &elem.topic_uuid;
 
-        let topic = cache.entry(topic_name).or_default();
+        let topic = cache.mem.entry(topic_name).or_default();
 
-        if topic
+        let e = if topic
             .get(topic_uuid)
             .is_some_and(|cur| elem.publication_timestamp <= cur.publication_timestamp)
         {
@@ -64,7 +100,15 @@ impl LocalCache {
         } else {
             topic.insert(topic_uuid.to_owned(), elem.to_owned());
             Ok(())
+        };
+
+        if e.is_ok() {
+            if let Some(s) = cache.store.as_mut() {
+                s.store(&elem).await;
+            }
         }
+
+        e
     }
 
     /// Retrieve an element by its uuid and topic
@@ -72,6 +116,7 @@ impl LocalCache {
         let cache = self.0.read().await;
 
         cache
+            .mem
             .get(topic_name)
             .and_then(|topic| topic.get(topic_uuid))
             .cloned()
@@ -89,9 +134,7 @@ impl LocalCache {
         s.finish()
     }
 
-    pub(crate) async fn read_owned(
-        &self,
-    ) -> OwnedRwLockReadGuard<BTreeMap<String, BTreeMap<String, DomoCacheElement>>> {
+    pub(crate) async fn read_owned(&self) -> OwnedRwLockReadGuard<InnerCache> {
         self.0.clone().read_owned().await
     }
 }
@@ -123,7 +166,7 @@ impl Query {
     pub async fn get(&self) -> Vec<Value> {
         let cache = self.cache.0.read().await;
 
-        if let Some(topics) = cache.get(&self.topic) {
+        if let Some(topics) = cache.mem.get(&self.topic) {
             if let Some(ref uuid) = self.uuid {
                 topics
                     .get(uuid)

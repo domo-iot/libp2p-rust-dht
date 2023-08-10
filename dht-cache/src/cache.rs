@@ -226,6 +226,7 @@ pub fn cache_channel(
                             local_write
                                 .read_owned()
                                 .await
+                                .mem
                                 .values()
                                 .flat_map(|topic| topic.values())
                                 .for_each(|elem| {
