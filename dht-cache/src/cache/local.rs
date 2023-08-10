@@ -37,16 +37,24 @@ impl InnerCache {
 pub struct LocalCache(Arc<RwLock<InnerCache>>);
 
 impl LocalCache {
+    /// Instantiate a local cache from the configuration provided
+    ///
+    /// If url is empty do not try to bootstrap the cache from the db
+    ///
+    /// TODO: propagate errors
     pub async fn with_config(db_config: &sifis_config::Cache) -> Self {
         let mut inner = InnerCache::default();
-        let mut store = SqlxStorage::new(db_config).await;
 
-        for a in store.get_all_elements().await {
-            inner.put(&a);
-        }
+        if !db_config.url.is_empty() {
+            let mut store = SqlxStorage::new(db_config).await;
 
-        if db_config.persistent {
-            inner.store = Some(store);
+            for a in store.get_all_elements().await {
+                inner.put(&a);
+            }
+
+            if db_config.persistent {
+                inner.store = Some(store);
+            }
         }
 
         LocalCache(Arc::new(RwLock::new(inner)))
@@ -76,7 +84,7 @@ impl LocalCache {
         let mut cache = self.0.write().await;
 
         if let Some(storage) = cache.store.as_mut() {
-            storage.store(&elem).await;
+            storage.store(elem).await;
         }
 
         cache.put(elem);
@@ -104,7 +112,7 @@ impl LocalCache {
 
         if e.is_ok() {
             if let Some(s) = cache.store.as_mut() {
-                s.store(&elem).await;
+                s.store(elem).await;
             }
         }
 
