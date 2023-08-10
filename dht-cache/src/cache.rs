@@ -125,8 +125,7 @@ impl PeersState {
         let desync = self
             .list
             .values()
-            .find(|data| data.cache_hash != hash && data.publication_timestamp > cur_ts)
-            .is_some();
+            .any(|data| data.cache_hash != hash && data.publication_timestamp > cur_ts);
 
         if desync {
             CacheState::Desynced {
