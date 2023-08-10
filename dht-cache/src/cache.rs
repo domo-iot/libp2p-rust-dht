@@ -212,10 +212,12 @@ pub fn cache_channel(
                     // update the peers_caches_state
                     peers_state.insert(m);
 
+                    // check for desync
                     let sync_info = peers_state.is_synchronized(&peer_id, hash).await;
 
                     log::debug!("local {peer_id:?} {sync_info:?}  -> {peers_state:#?}");
 
+                    // republish the local cache if needed
                     if let CacheState::Desynced { is_leader } = sync_info {
                         if is_leader
                             && utils::get_epoch_ms() - peers_state.last_repub_timestamp
@@ -239,8 +241,6 @@ pub fn cache_channel(
                         }
                     }
 
-                    // check for desync
-                    // republish the local cache if needed
                     None
                 }
                 Event::Discovered(who) => Some(DomoEvent::NewPeers(
