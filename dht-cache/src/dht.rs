@@ -151,7 +151,7 @@ pub fn dht_channel(
     JoinHandle<Swarm<DomoBehaviour>>,
 ) {
     let (cmd_send, mut cmd_recv) = mpsc::unbounded_channel();
-    let (mut ev_send, ev_recv) = mpsc::unbounded_channel();
+    let (ev_send, ev_recv) = mpsc::unbounded_channel();
 
     let handle = tokio::task::spawn(async move {
         loop {
@@ -164,7 +164,7 @@ pub fn dht_channel(
                     }
                 }
                 ev = swarm.select_next_some() => {
-                    if handle_swarm_event(&mut swarm, ev, &mut ev_send).is_err() {
+                    if handle_swarm_event(&mut swarm, ev, &ev_send).is_err() {
                         log::debug!("Exiting ev");
                         return swarm
                     }

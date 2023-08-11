@@ -129,15 +129,11 @@ impl PeersState {
 
         if desync {
             CacheState::Desynced {
-                is_leader: self
-                    .list
-                    .values()
-                    .find(|data| {
-                        data.cache_hash == hash
-                            && data.peer_id.as_str() < peer_id
-                            && data.publication_timestamp > cur_ts
-                    })
-                    .is_none(),
+                is_leader: !self.list.values().any(|data| {
+                    data.cache_hash == hash
+                        && data.peer_id.as_str() < peer_id
+                        && data.publication_timestamp > cur_ts
+                }),
             }
         } else {
             CacheState::Synced
