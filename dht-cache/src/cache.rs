@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 use tokio::time;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
+use crate::domolibp2p::{self, generate_rsa_key};
 use crate::{
     cache::local::DomoCacheStateMessage,
     data::DomoEvent,
@@ -22,6 +23,54 @@ use crate::{
 };
 
 use self::local::{DomoCacheElement, LocalCache, Query};
+
+/// Builder for a Cached DHT Node
+// TODO: make it Clone
+pub struct Builder {
+    cfg: crate::Config,
+}
+
+impl Builder {
+    /// Create a new Builder from a [crate::Config]
+    pub fn from_config(cfg: crate::Config) -> Builder {
+        Builder { cfg }
+    }
+
+    /// Instantiate a new DHT node a return
+    pub async fn make_channel(
+        self,
+    ) -> Result<(Cache, impl Stream<Item = DomoEvent>), crate::Error> {
+        let loopback_only = self.cfg.loopback;
+        let shared_key = self.cfg.shared_key.clone();
+        let private_key_file = self.cfg.private_key.as_ref();
+
+        // Create a random local key.
+        let mut pkcs8_der = if let Some(pk_path) = private_key_file {
+            match std::fs::read(&pk_path) {
+                Ok(pem) => {
+                    let der = pem_rfc7468::decode_vec(&pem)?;
+                    der.1
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    // Generate a new key and put it into the file at the given path
+                    let (pem, der) = generate_rsa_key();
+                    std::fs::write(pk_path, pem)?;
+                    der
+                }
+                Err(e) => Err(e)?,
+            }
+        } else {
+            generate_rsa_key().1
+        };
+
+        let local_key_pair = crate::Keypair::rsa_from_pkcs8(&mut pkcs8_der)?;
+        let swarm = domolibp2p::start(shared_key, local_key_pair, loopback_only).await?;
+
+        let local = LocalCache::with_config(&self.cfg).await;
+        // TODO: add a configuration item for the resend interval
+        Ok(cache_channel(local, swarm, 1000))
+    }
+}
 
 /// Cached DHT
 ///
@@ -277,6 +326,17 @@ mod test {
     use super::*;
     use crate::dht::test::*;
     use std::{collections::HashSet, pin::pin};
+
+    #[tokio::test]
+    async fn builder() {
+        let cfg = crate::Config {
+            shared_key: "d061545647652562b4648f52e8373b3a417fc0df56c332154460da1801b341e9"
+                .to_owned(),
+            ..Default::default()
+        };
+
+        let (_cache, _events) = Builder::from_config(cfg).make_channel().await.unwrap();
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn syncronization() {
