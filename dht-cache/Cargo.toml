@@ -30,11 +30,11 @@ openssl-sys = "*"
 libsqlite3-sys = "*"
 thiserror = "1.0.43"
 anyhow = "1.0.72"
-libp2p-swarm-test = "0.2.0"
 tokio-stream = "0.1.14"
 
 [dev-dependencies]
 env_logger = "0.10.0"
+libp2p-swarm-test = "0.2.0"
 
 
 [package.metadata.cargo-udeps.ignore]
