@@ -41,7 +41,7 @@ impl Builder {
         self,
     ) -> Result<(Cache, impl Stream<Item = DomoEvent>), crate::Error> {
         let loopback_only = self.cfg.loopback;
-        let shared_key = self.cfg.shared_key.clone();
+        let shared_key = domolibp2p::parse_hex_key(&self.cfg.shared_key)?;
         let private_key_file = self.cfg.private_key.as_ref();
 
         // Create a random local key.

@@ -32,7 +32,7 @@ use crate::Error;
 
 const KEY_SIZE: usize = 32;
 
-fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], Error> {
+pub fn parse_hex_key(s: &str) -> Result<PreSharedKey, Error> {
     if s.len() == KEY_SIZE * 2 {
         let mut r = [0u8; KEY_SIZE];
         for i in 0..KEY_SIZE {
@@ -44,7 +44,9 @@ fn parse_hex_key(s: &str) -> Result<[u8; KEY_SIZE], Error> {
                 Err(_e) => return Err(Error::Hex("Error while parsing".into())),
             }
         }
-        Ok(r)
+        let psk = PreSharedKey::new(r);
+
+        Ok(psk)
     } else {
         Err(Error::Hex(format!(
             "Len Error: expected {} but got {}",
@@ -86,16 +88,13 @@ pub fn generate_rsa_key() -> (Vec<u8>, Vec<u8>) {
 }
 
 pub async fn start(
-    shared_key: String,
+    shared_key: PreSharedKey,
     local_key_pair: identity::Keypair,
     loopback_only: bool,
 ) -> Result<Swarm<DomoBehaviour>, Error> {
     let local_peer_id = PeerId::from(local_key_pair.public());
 
-    let arr = parse_hex_key(&shared_key)?;
-    let psk = PreSharedKey::new(arr);
-
-    let transport = build_transport(local_key_pair.clone(), psk);
+    let transport = build_transport(local_key_pair.clone(), shared_key);
 
     // Create a swarm to manage peers and events.
     let mut swarm = {

@@ -1,6 +1,6 @@
 //! Cached access to the DHT
 pub use crate::data::*;
-use crate::domolibp2p::generate_rsa_key;
+use crate::domolibp2p::{generate_rsa_key, parse_hex_key};
 use crate::domopersistentstorage::{DomoPersistentStorage, SqlxStorage};
 use crate::utils;
 use crate::Error;
@@ -451,7 +451,7 @@ impl DomoCache {
 
         let is_persistent_cache = conf.persistent;
         let loopback_only = conf.loopback;
-        let shared_key = conf.shared_key.clone();
+        let shared_key = parse_hex_key(&conf.shared_key)?;
         let private_key_file = conf.private_key.clone();
 
         let storage = SqlxStorage::new(&conf).await;
